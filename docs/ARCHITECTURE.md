@@ -1,208 +1,136 @@
-# Architecture: Time-Aware Project Tracker
+# Architecture
 
-> How the system is built. *What* it must do lives in [`specs/`](../specs/); project rules live in [`.specify/memory/constitution.md`](../.specify/memory/constitution.md).
+> How the system is built. *What* it must do lives in [`specs/`](../specs/README.md);
+> project rules live in [`.specify/memory/constitution.md`](../.specify/memory/constitution.md).
+> If this document and a spec disagree, the spec wins and this file is the bug.
 
-**Target Execution Engines**: Antigravity, Claude Code, Cursor, Human Developers  
-**Compliance Standard**: WCAG 2.1 Level AA  
-
----
-
-## 1. System Vision & Core Intent
-
-### 1.1 Problem Statement
-Traditional agile tools (Jira, Trello, Linear) treat task duration as static point estimates or loose due dates without modeling the actual physics of time:
-1. **Context-Switching Friction**: Whenever a human is interrupted or pauses a task, they incur a measurable **takedown penalty** (saving progress, stashing state) and a subsequent **setup warm-up penalty** (rebuilding mental context, loading tools).
-2. **Calendar Inelasticity**: Tasks do not progress 24/7; they must respect daily working windows (e.g., 08:00–18:00) and weekends.
-3. **Lack of Dynamic Cascade**: Moving or delaying a prerequisite task often fails to automatically cascade to dependent tasks with critical path visibility.
-
-### 1.2 System Purpose
-A personal and high-leverage time management tool that combines:
-- An intuitive Jira-style Kanban board.
-- A deterministic, constraint-based **Critical Path Method (CPM)** reactive scheduler.
-- A dual visual experience featuring an interactive, multi-segmented **Gantt Chart** and a **Kanban Board**.
-- A native **Model Context Protocol (MCP) Server** enabling AI agents (Antigravity, Claude Code) to inspect, decompose, pin, and manipulate schedules programmatically.
-
----
-
-## 2. Mathematical Models & Scheduling Engine Specifications
-
-### 2.1 The Interruption & Context-Switching Formula
-Let:
-- $D$ = Base focused productive work duration (minutes).
-- $S$ = Setup warm-up buffer (minutes).
-- $T$ = Takedown wrap-up buffer (minutes).
-- $k$ = Number of recorded task interruptions ($k \ge 0$).
-
-When executed in a single uninterrupted session ($k = 0$):
-$$\text{Total Planned Duration} = S + D + T$$
-
-When interrupted $k$ times into $k + 1$ discrete work sessions:
-$$\text{Effective Duration} = (k + 1) \cdot S + D + (k + 1) \cdot T$$
-
-**Overhead Added per Interruption Event**:
-$$\Delta_{\text{overhead}} = S + T$$
-When an active task is paused:
-1. Active work session closes at $t_{\text{pause}}$.
-2. A takedown session of duration $T$ is registered.
-3. Task status changes to `PAUSED`.
-4. Downstream successor tasks automatically slip forward by $T + \text{Remaining Work} + S$.
-
-### 2.2 Working Calendar Wrapping Algorithm
-Let working hours be defined by interval $[H_{\text{start}}, H_{\text{end}}]$ on valid working days $W \subseteq \{0, 1, 2, 3, 4, 5, 6\}$.
-- **Forward Step**: Adding $M$ minutes to date $t$:
-  1. Snap $t$ to next valid working window if $t$ falls outside $[H_{\text{start}}, H_{\text{end}}]$ or on non-work days.
-  2. Compute available minutes today: $M_{\text{avail}} = \text{endOfDayWorkingWindow} - t$.
-  3. If $M \le M_{\text{avail}}$, return $t + M$.
-  4. If $M > M_{\text{avail}}$, advance date to $H_{\text{start}}$ of next working day and recurse with $M - M_{\text{avail}}$.
-- **Backward Step**: Subtracting $M$ minutes from deadline $t$ follows the symmetric inverse operation.
-
-### 2.3 Dependency Graph & Critical Path Method (CPM)
-Tasks form a Directed Acyclic Graph (DAG) $G = (V, E)$.
-1. **Topological Sort**: Kahn's algorithm detects cycles. If a cycle exists, flag `hasCycle = true` and alert the user.
-2. **Forward Pass (Early Dates)**:
-   - For root tasks: $\text{ES}_i = \max(\text{ProjectStart}, \text{PinnedConstraint}_i)$.
-   - For dependent tasks with predecessor $p$:
-     - **Finish-to-Start (FS)**: $\text{ES}_i \ge \text{EF}_p + \text{lag}$
-     - **Start-to-Start (SS)**: $\text{ES}_i \ge \text{ES}_p + \text{lag}$
-     - **Finish-to-Finish (FF)**: $\text{EF}_i \ge \text{EF}_p + \text{lag}$
-     - **Start-to-Finish (SF)**: $\text{EF}_i \ge \text{ES}_p + \text{lag}$
-   - $\text{EF}_i = \text{addWorkingMinutes}(\text{ES}_i, \text{TotalPlannedDuration}_i)$.
-3. **Backward Pass (Late Dates & Slack)**:
-   - Set $\text{ProjectEnd} = \max_i(\text{EF}_i)$.
-   - For each task in reverse topological order:
-     - $\text{LF}_i = \min(\text{Successor Late Constraints}, \text{Pinned Deadline}_i)$.
-     - $\text{LS}_i = \text{subtractWorkingMinutes}(\text{LF}_i, \text{TotalPlannedDuration}_i)$.
-     - $\text{Total Float}_i = \text{getWorkingMinutesBetween}(\text{ES}_i, \text{LS}_i)$.
-4. **Critical Path Identification**:
-   - A task is on the critical path iff $\text{Total Float}_i \le 15\text{ minutes}$ and $\text{Status}_i \ne \text{DONE}$.
-
----
-
-## 3. System Architecture & Tech Stack
+## Shape
 
 ```
-+---------------------------------------------------------------------------------+
-|                                 CLIENT BROWSER                                  |
-|   +--------------------------+  +--------------------------+  +---------------+ |
-|   |   Kanban Board View      |  |   Gantt Chart (SVG)      |  | Accessibility | |
-|   |  - HTML5 Drag & Drop     |  |  - Zoom: Hour/Day/Week   |  | - WCAG 2.1 AA | |
-|   |  - Status Actions        |  |  - Bezier Links (FS,SS)  |  | - Live Region | |
-|   |  - Time Chips & Buffers  |  |  - S/Work/T Segmented    |  | - Skip Link   | |
-|   +--------------------------+  +--------------------------+  +---------------+ |
-+----------------------------------------+----------------------------------------+
-                                         | Next.js App Router (React 19 / TypeScript)
-                                         v
-+---------------------------------------------------------------------------------+
-|                                 BACKEND / APIS                                  |
-|   /api/tasks          /api/dependencies      /api/sessions     /api/ai-decompose|
-+----------------------------------------+----------------------------------------+
-                                         | Prisma ORM 6
-                                         v
-+---------------------------------------------------------------------------------+
-|                                PERSISTENCE LAYER                                |
-|                        SQLite Database (prisma/dev.db)                          |
-+---------------------------------------------------------------------------------+
-                                         ^
-                                         | JSON-RPC (stdio transport)
-+----------------------------------------+----------------------------------------+
-|                                MCP AI SERVER                                    |
-|   src/mcp/server.ts (@modelcontextprotocol/sdk)                                 |
-|   Available to: Claude Code, Antigravity Agent, Cursor, Terminal CLI            |
-+---------------------------------------------------------------------------------+
+ Browser (React)                 AI agent
+   page.tsx, components/           MCP client
+        | fetch JSON                  | stdio JSON-RPC
+        v                             v
+ src/app/api/**/route.ts        src/mcp/server.ts
+   route(): guard + errors        tool(): errors
+        \                           /
+         v                         v
+        src/lib/validation.ts  (zod: one set of rules)
+        src/lib/services/*     (all database writes, transactional)
+              |                         |
+              v                         v
+     Prisma -> SQLite            pure logic, no I/O:
+     prisma/dev.db                 scheduler/  tasks/  ics.ts
+                                   insights.ts baseline.ts decompose/
 ```
 
-### Component Stack
-- **Framework**: Next.js 16 (App Router, React 19, TypeScript).
-- **Styling**: Tailwind CSS v4 via `@tailwindcss/postcss` and `postcss.config.js`.
-- **Database**: SQLite via Prisma ORM 6 (`prisma/schema.prisma`).
-- **Icons**: `lucide-react`.
-- **Date Library**: `date-fns` v4.
-- **AI Integration**: `@modelcontextprotocol/sdk` (Model Context Protocol).
+Two rules hold the design together (constitution, principles II and III):
 
----
+1. **Pure core.** Everything that decides something (scheduling, state transitions,
+   cycle checks, calendar parsing, insights, baseline comparison, model-reply parsing)
+   is a pure function with tests in `tests/`. None of it imports Prisma or reads the clock.
+2. **Thin doors.** Routes and MCP tools only parse input with the shared schemas and call
+   a service. They never touch the database themselves.
 
-## 4. Entity Schema & Data Contract
+## Directory map
 
-### Task
-| Field | Type | Description |
+| Path | Role |
+|---|---|
+| `src/lib/scheduler/engine.ts` | The scheduler: CPM, leveling, late dates, conflicts |
+| `src/lib/scheduler/calendar.ts`, `tz.ts` | Working time: daily window minus busy blocks, in an IANA zone |
+| `src/lib/scheduler/whatif.ts` | Compare the plan with a hypothetical change |
+| `src/lib/tasks/transitions.ts` | Task state machine (pure planner) |
+| `src/lib/tasks/graph.ts` | Cycle detection |
+| `src/lib/ics.ts` | iCalendar reader |
+| `src/lib/insights.ts`, `baseline.ts`, `backup-check.ts` | Reports and checks |
+| `src/lib/decompose/` | Model client and reply parser; built-in templates |
+| `src/lib/validation.ts` | Every input schema |
+| `src/lib/guard.ts`, `api.ts`, `errors.ts` | Request guard, route wrapper, safe errors |
+| `src/lib/services/` | `tasks`, `schedule`, `calendar`, `insights`, `baselines`, `backup`, `decompose` |
+| `src/app/api/` | REST routes |
+| `src/mcp/server.ts` | MCP tools |
+| `src/components/`, `src/app/page.tsx` | UI |
+| `tests/` | `node:test` suites; none needs a database |
+
+## Time model
+
+A task is `setup + work` (attended), then optional `unattended` waiting, then `takedown`
+(attended):
+
+```
+|-- S --|------ D ------|~~~~~~ U (clock time, person is free) ~~~~~~|-- T --|
+start                attendedEnd                              takedownStart  finish
+```
+
+- S, D, T are working minutes on the calendar. U is elapsed clock time, around the clock.
+- With k logged interruptions the effective duration is `(k+1)·S + D + (k+1)·T (+ U)`.
+- What remains to be planned depends on status: not started or paused needs `S + remaining D + T`;
+  running needs `remaining D + T` from now; done needs nothing and sits at its actual dates.
+
+## Scheduling passes
+
+`calculateSchedule(tasks, dependencies, settings, now)`:
+
+1. **Graph.** Dependencies between scheduled tasks; tasks on a cycle are flagged and their
+   mutual links dropped.
+2. **CPM.** Forward and backward pass without leveling, for slack. A second backward pass
+   against a distant horizon isolates slack caused by real deadlines.
+3. **ALAP.** As-late-as-possible tasks get their late start as a lower bound.
+4. **Leveled forward pass.** Take the best ready task and place it at the earliest time
+   that meets its bounds and does not overlap its assignee's occupied intervals. Order:
+   done, running, hard pins, priority, deadline pressure, has-unattended-time, slack,
+   board order.
+5. **Backward pass** over dependencies plus implicit links between back-to-back work of
+   the same assignee. Float is finish float; critical means float of 15 working minutes
+   or less on an unfinished task.
+6. **Conflicts.** Missed pins and deadlines, cycles, and two running tasks for one person.
+
+Dependency bounds (lag in working minutes, negative is a lead):
+
+| Type | Forward | Backward |
 |---|---|---|
-| `id` | String (CUID) | Primary Key |
-| `title` | String | Task name |
-| `description` | String? | Detailed description, notes |
-| `status` | Enum | `BACKLOG`, `SCHEDULED`, `IN_PROGRESS`, `PAUSED`, `DONE` |
-| `priority` | Enum | `LOW`, `MEDIUM`, `HIGH`, `URGENT` |
-| `baseDurationMinutes` | Int | Pure productive focused work (default: 60) |
-| `setupMinutes` | Int | Warm-up / prep buffer (default: 15) |
-| `takedownMinutes` | Int | Wrap-up / clean buffer (default: 10) |
-| `constraintType` | Enum | `ASAP`, `ALAP`, `MUST_START_ON`, `MUST_FINISH_ON`, `START_NO_EARLIER_THAN`, `FINISH_NO_LATER_THAN` |
-| `pinnedDate` | DateTime? | Fixed target date for constraint |
-| `scheduledStart` | DateTime? | Computed Early Start (ES) |
-| `scheduledEnd` | DateTime? | Computed Early Finish (EF) |
-| `actualStart` | DateTime? | Timestamp when task entered IN_PROGRESS |
-| `actualEnd` | DateTime? | Timestamp when task entered DONE |
-| `color` | String | Hex color string |
-| `order` | Int | Display sequence order |
+| FS | `ES(s) ≥ EF(p) + lag` | `LF(p) ≤ LS(s) − lag` |
+| SS | `ES(s) ≥ ES(p) + lag` | `LS(p) ≤ LS(s) − lag` |
+| FF | `EF(s) ≥ EF(p) + lag` | `LF(p) ≤ LF(s) − lag` |
+| SF | `EF(s) ≥ ES(p) + lag` | `LS(p) ≤ LF(s) − lag` |
 
-### TaskDependency
-| Field | Type | Description |
-|---|---|---|
-| `id` | String (CUID) | Primary Key |
-| `predecessorId` | String (FK) | Prerequisite task |
-| `successorId` | String (FK) | Dependent task |
-| `type` | Enum | `FS` (Finish-to-Start), `SS` (Start-to-Start), `FF` (Finish-to-Finish), `SF` (Start-to-Finish) |
-| `lagMinutes` | Int | Buffer or lead time in minutes |
+## Task states
 
-### WorkSession & InterruptionLog
-- **`WorkSession`**: Tracks actual intervals of `SETUP`, `WORK`, and `TAKEDOWN` with duration in minutes.
-- **`InterruptionLog`**: Records timestamp of pause, text reason, and calculated overhead penalty.
+```
+BACKLOG <-> SCHEDULED --START--> IN_PROGRESS --PAUSE--> PAUSED
+                                      ^                    |
+                                      +------RESUME--------+
+any but DONE --COMPLETE--> DONE --move--> BACKLOG | SCHEDULED (reopen)
+```
 
----
+START creates a SETUP session `[now, now+S]` and an open WORK session from `now+S`.
+PAUSE closes the work session, adds a TAKEDOWN session and an interruption with `S+T`
+overhead. Anything not in the diagram is refused with 409.
 
-## 5. Model Context Protocol (MCP) Server Interface
+## Data
 
-The MCP server runs over `stdio` via `npm run mcp` (`src/mcp/server.ts`).
+`prisma/schema.prisma`: `Task`, `TaskDependency`, `WorkSession`, `InterruptionLog`,
+`ProjectSettings` (single row), `TimeOff`, `Baseline`, `BaselineEntry`. Changes ship as
+migrations in `prisma/migrations/`.
 
-### Tools Declared
-1. **`list_tasks`**: Returns all tasks, statuses, durations, and dependencies in JSON format.
-2. **`create_task`**: Creates a single task with base duration, setup/takedown buffers, priority, and date constraints.
-3. **`bulk_decompose_project`**: Accepts an array of tasks and dependencies; atomically inserts them and returns calculated critical path schedule.
-4. **`add_dependency`**: Links two tasks with dependency type (`FS`, `SS`, `FF`, `SF`) and lag.
-5. **`pin_task`**: Sets constraint type (`MUST_START_ON`, `MUST_FINISH_ON`, `SNET`, `FNLT`) and ISO timestamp.
-6. **`get_schedule_summary`**: Computes and returns project start/end, critical bottleneck tasks, and slack.
-7. **`track_work_session`**: Triggers state transitions (`START`, `PAUSE`, `RESUME`, `COMPLETE`) with interruption reasons.
+## Request handling
 
----
+`route()` in `src/lib/api.ts` wraps every handler: it marks the route as per-request,
+runs `guardRequest` (Host allow-list, same-origin writes, JSON bodies only), and maps
+errors: zod to 400 with field messages, `ApiError` to its status, Prisma not-found to 404,
+everything else to a logged, generic 500.
 
-## 6. Accessibility Specification (WCAG 2.1 Level AA)
+## Build notes
 
-Every user interface component must adhere to the following strict accessibility contracts:
+- Always run Next with `--webpack`; the npm scripts do. Tailwind v4 compiles through
+  `postcss.config.js`; keep the `@source` directive in `src/app/globals.css`.
+- Read `node_modules/next/dist/docs/` before using Next APIs; this version differs from
+  older ones.
+- Seed data stays non-technical (a holiday dinner), so the time model is easy to see.
 
-1. **Perceivable**:
-   - **Contrast Ratio**: All text elements must achieve $\ge 4.5:1$ contrast against their parent background (e.g. `text-red-950 bg-red-100 border-red-300`).
-   - **Color Independence**: Status, priority, and critical path cannot be indicated by color alone; every badge must include text and/or an icon with an aria-label.
-   - **Accessible Gantt Fallback**: Screen readers cannot parse horizontal SVG coordinates. An accessible summary table (`<table className="sr-only">`) must always be rendered alongside the SVG canvas.
-2. **Operable**:
-   - **Keyboard Navigation**: All interactive elements (Kanban cards, action buttons, zoom controls, Gantt bars) must be focusable via `Tab` and interactive via `Enter` or `Space`.
-   - **Focus Visibility**: All interactive controls must display a high-contrast focus ring (`focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none`).
-   - **Skip Link**: The top of the page must provide a `<a href="#main-content">Skip to main content</a>` element.
-   - **Modal Dialogs**: Modals must declare `role="dialog" aria-modal="true" aria-labelledby="..."` and listen for `Escape` key events to dismiss.
-3. **Understandable & Robust**:
-   - **Form Controls**: Every `<input>`, `<select>`, `<textarea>` must have an explicit `id` matching its `<label htmlFor="...">`.
-   - **Live Region**: A dynamic announcement region `<div role="status" aria-live="polite" className="sr-only">` must announce task state updates and schedule recalculations.
+## Accessibility
 
----
-
-## 7. Execution Guide for Antigravity & Claude Code
-
-When working on this repository, AI agents must adhere to the following rules:
-
-1. **Webpack Build Constraint**:
-   Because Node.js v26 IPC causes a known conflict with `@tailwindcss/turbopack`, **always execute Next.js with `--webpack`** (`npm run dev` and `npm run build` are preconfigured). Never remove `--webpack` from `package.json`.
-2. **PostCSS Configuration**:
-   Tailwind CSS v4 is compiled via `@tailwindcss/postcss` declared in `postcss.config.js`. Do not delete `postcss.config.js` or the `@source "../**/*.{js,ts,jsx,tsx}";` directive in `src/app/globals.css`.
-3. **Deterministic Math Verification**:
-   When altering scheduling logic in `src/lib/scheduler/`, always run `npx tsx scripts/test-scheduler.ts` to verify calendar wrapping, float calculations, and transition overhead math.
-4. **MCP Verification**:
-   Always verify MCP server modifications using `npx tsx scripts/test-mcp.ts`.
-5. **Real-World Non-Technical Seed Integrity**:
-   Keep seed data grounded in relatable real-world time-management activities (e.g., Thanksgiving Dinner, Bathroom Remodeling, School Plays) that illustrate setup and takedown mechanics intuitively.
+Working standard is WCAG 2.1 AA (constitution, principle V): skip link, live region for
+changes, labelled controls, visible focus, no meaning by color alone, dialogs that close
+on Escape and return focus, and a text table equivalent of the timeline including
+conflicts and baseline slip.

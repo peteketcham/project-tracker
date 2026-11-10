@@ -26,9 +26,10 @@ export function created<T>(body: T) {
  */
 export function route<Ctx = unknown>(handler: (req: Request, ctx: Ctx) => Promise<unknown>) {
   return async (req: Request, ctx: Ctx): Promise<Response> => {
+    // Every route is per-request: never prerender or cache API responses. This
+    // stays outside the try so Next's own prerender bail-out is not swallowed.
+    await connection();
     try {
-      // Every route is per-request: never prerender or cache API responses.
-      await connection();
       guardRequest(req);
       const result = await handler(req, ctx);
       return result instanceof Response ? result : NextResponse.json(result);
