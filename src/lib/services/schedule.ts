@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { calculateSchedule } from "../scheduler/engine";
 import type {
+  BusyBlock,
   ConstraintType,
   DependencyType,
   SchedulerDependency,
@@ -22,17 +23,26 @@ export async function getSettingsRow() {
  * Loads everything, runs the scheduler, and returns tasks enriched with their
  * computed dates. Shared by GET /api/tasks and the MCP schedule tools.
  */
-export async function getSchedule() {
-  const settings = await getSettingsRow();
-  const calendar: WorkingCalendarSettings = {
+export type SettingsRow = Awaited<ReturnType<typeof getSettingsRow>>;
+
+export function toCalendarSettings(
+  settings: SettingsRow,
+  busy: BusyBlock[] = []
+): WorkingCalendarSettings {
+  return {
     workingHoursStart: settings.workingHoursStart,
     workingHoursEnd: settings.workingHoursEnd,
     workDays: settings.workDays.split(",").map(Number),
-    defaultSetupMinutes: settings.defaultSetupMinutes,
-    defaultTakedownMinutes: settings.defaultTakedownMinutes,
+    timezone: settings.timezone,
+    levelResources: settings.levelResources,
     projectStartDate: settings.projectStartDate,
+    busy,
   };
+}
 
+/** Everything the scheduler needs, read from the database. */
+export async function loadScheduleInputs() {
+  const settings = await getSettingsRow();
   const tasks = await prisma.task.findMany({
     orderBy: { order: "asc" },
     include: {
@@ -54,12 +64,18 @@ export async function getSchedule() {
       baseDurationMinutes: t.baseDurationMinutes,
       setupMinutes: t.setupMinutes,
       takedownMinutes: t.takedownMinutes,
+      unattendedMinutes: t.unattendedMinutes,
+      assignee: t.assignee,
       constraintType: t.constraintType as ConstraintType,
       pinnedDate: t.pinnedDate,
+      actualStart: t.actualStart,
+      actualEnd: t.actualEnd,
       order: t.order,
       completedWorkMinutes: t.workSessions
         .filter((s) => s.sessionType === "WORK" && s.endTime)
         .reduce((sum, s) => sum + s.durationMinutes, 0),
+      openWorkSessionStart:
+        t.workSessions.find((s) => s.sessionType === "WORK" && !s.endTime)?.startTime ?? null,
       interruptionCount: t.interruptionLogs.length,
     }));
 
@@ -71,7 +87,25 @@ export async function getSchedule() {
     lagMinutes: d.lagMinutes,
   }));
 
-  const schedule = calculateSchedule(schedulerTasks, schedulerDeps, calendar);
+  return {
+    settings,
+    tasks,
+    dependencies,
+    schedulerTasks,
+    schedulerDeps,
+    calendar: toCalendarSettings(settings),
+  };
+}
+
+/**
+ * Loads everything, runs the scheduler, and returns tasks enriched with their
+ * computed dates. Shared by GET /api/tasks and the MCP schedule tools.
+ */
+export async function getSchedule(now: Date = new Date()) {
+  const { settings, tasks, dependencies, schedulerTasks, schedulerDeps, calendar } =
+    await loadScheduleInputs();
+
+  const schedule = calculateSchedule(schedulerTasks, schedulerDeps, calendar, now);
   const byId = new Map(schedule.tasks.map((t) => [t.id, t]));
 
   const enriched = tasks.map((task) => {
@@ -80,6 +114,8 @@ export async function getSchedule() {
       ...task,
       scheduledStart: s?.earlyStart ?? null,
       scheduledEnd: s?.earlyFinish ?? null,
+      attendedEnd: s?.attendedEnd ?? null,
+      takedownStart: s?.takedownStart ?? null,
       lateStart: s?.lateStart ?? null,
       lateFinish: s?.lateFinish ?? null,
       totalFloatMinutes: s?.totalFloatMinutes ?? null,
@@ -89,6 +125,10 @@ export async function getSchedule() {
         task.setupMinutes + task.baseDurationMinutes + task.takedownMinutes,
       setupMinutesApplied: s?.setupMinutesApplied ?? task.setupMinutes,
       takedownMinutesApplied: s?.takedownMinutesApplied ?? task.takedownMinutes,
+      netWorkRemainingMinutes: s?.netWorkRemainingMinutes ?? task.baseDurationMinutes,
+      effectiveDurationMinutes: s?.effectiveDurationMinutes ?? null,
+      overheadMinutes: s?.overheadMinutes ?? 0,
+      conflicts: s?.conflicts ?? [],
     };
   });
 
@@ -97,10 +137,13 @@ export async function getSchedule() {
     dependencies,
     settings,
     scheduleOverview: {
+      now,
       projectStart: schedule.projectStart,
       projectEnd: schedule.projectEnd,
       criticalPathTaskIds: schedule.criticalPathTaskIds,
       hasCycle: schedule.hasCycle,
+      cycleTaskIds: schedule.cycleTaskIds,
+      conflicts: schedule.conflicts,
     },
     schedule,
   };

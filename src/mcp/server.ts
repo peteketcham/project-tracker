@@ -131,6 +131,7 @@ tool(
       projectStart: schedule.projectStart.toISOString(),
       projectEnd: schedule.projectEnd.toISOString(),
       hasCycle: schedule.hasCycle,
+      conflicts: schedule.conflicts,
       criticalPathCount: schedule.criticalPathTaskIds.length,
       tasks: schedule.tasks.map((t) => ({
         id: t.id,
@@ -140,7 +141,11 @@ tool(
         finish: t.earlyFinish.toISOString(),
         floatMinutes: t.totalFloatMinutes,
         isCritical: t.isCritical,
-        remainingPlannedMinutes: t.totalPlannedDurationMinutes,
+        remainingAttendedMinutes: t.totalPlannedDurationMinutes,
+        unattendedMinutes: t.unattendedMinutesApplied,
+        effectiveDurationMinutes: t.effectiveDurationMinutes,
+        interruptionOverheadMinutes: t.overheadMinutes,
+        assignee: t.assignee ?? null,
       })),
     };
   }

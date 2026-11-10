@@ -221,6 +221,24 @@ export default function ProjectTrackerHome() {
           </div>
         )}
 
+        {scheduleOverview && scheduleOverview.conflicts.length > 0 && (
+          <section
+            aria-labelledby="conflicts-heading"
+            className="mb-4 px-4 py-3 rounded-lg bg-amber-100 text-amber-950 dark:bg-amber-950/70 dark:text-amber-100 border border-amber-400 dark:border-amber-700 text-sm"
+          >
+            <h2 id="conflicts-heading" className="font-bold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" aria-hidden="true" />
+              {scheduleOverview.conflicts.length} scheduling conflict
+              {scheduleOverview.conflicts.length === 1 ? "" : "s"}
+            </h2>
+            <ul className="mt-1 list-disc pl-6 space-y-0.5 text-xs">
+              {scheduleOverview.conflicts.map((c) => (
+                <li key={`${c.taskId}-${c.type}`}>{c.message}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {data === null ? (
           !error && (
             <div className="flex-1 flex items-center justify-center py-24" role="status">

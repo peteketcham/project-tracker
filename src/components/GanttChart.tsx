@@ -7,7 +7,6 @@ import {
   addDays,
   differenceInMinutes,
   startOfDay,
-  setHours,
 } from "date-fns";
 import { formatMinutes } from "@/lib/utils";
 import { Flame, Pin } from "lucide-react";
@@ -60,7 +59,7 @@ export function GanttChart({
       }
     });
 
-    start = setHours(startOfDay(start), 8);
+    start = startOfDay(start);
     end = addDays(end, 2);
 
     const totalMins = Math.max(600, differenceInMinutes(end, start));
@@ -98,7 +97,7 @@ export function GanttChart({
     return days;
   }, [timelineStart, timelineEnd, pixelsPerMinute]);
 
-  // Calculate task positions
+  // Calculate task positions from the scheduler's real segment times
   const taskCoordinates = useMemo(() => {
     const coords = new Map<
       string,
@@ -107,40 +106,41 @@ export function GanttChart({
         width: number;
         setupWidth: number;
         workWidth: number;
+        waitWidth: number;
         takedownWidth: number;
         y: number;
         task: KanbanTask;
       }
     >();
 
+    const x = (d: Date) => Math.max(0, differenceInMinutes(d, timelineStart)) * pixelsPerMinute;
+
     scheduledTasks.forEach((task, index) => {
       if (!task.scheduledStart || !task.scheduledEnd) return;
 
-      const taskStart = new Date(task.scheduledStart);
-      const taskEnd = new Date(task.scheduledEnd);
+      const start = new Date(task.scheduledStart);
+      const end = new Date(task.scheduledEnd);
+      const attendedEnd = task.attendedEnd ? new Date(task.attendedEnd) : end;
+      const takedownStart = task.takedownStart ? new Date(task.takedownStart) : attendedEnd;
 
-      const offsetMinutes = Math.max(0, differenceInMinutes(taskStart, timelineStart));
-      const durMinutes = Math.max(20, differenceInMinutes(taskEnd, taskStart));
+      const left = x(start);
+      const width = Math.max(35, x(end) - left);
+      const attendedWidth = Math.max(0, x(attendedEnd) - left);
+      const waitWidth = Math.max(0, x(takedownStart) - x(attendedEnd));
+      const takedownWidth =
+        task.status === "DONE" ? 0 : Math.max(0, Math.min(width, x(end) - x(takedownStart)));
 
-      const left = offsetMinutes * pixelsPerMinute;
-      const width = Math.max(35, durMinutes * pixelsPerMinute);
-
-      const totalPlanned =
-        task.totalPlannedDurationMinutes ||
-        task.setupMinutes + task.baseDurationMinutes + task.takedownMinutes;
-
-      const setupRatio = task.setupMinutes / totalPlanned;
-      const takedownRatio = task.takedownMinutes / totalPlanned;
-
-      const setupWidth = Math.max(8, width * setupRatio);
-      const takedownWidth = Math.max(8, width * takedownRatio);
-      const workWidth = Math.max(12, width - setupWidth - takedownWidth);
+      const setup = task.status === "DONE" ? 0 : task.setupMinutesApplied ?? task.setupMinutes;
+      const work = task.netWorkRemainingMinutes ?? task.baseDurationMinutes;
+      const setupWidth = setup + work > 0 ? attendedWidth * (setup / (setup + work)) : 0;
+      const workWidth = Math.max(12, width - setupWidth - waitWidth - takedownWidth);
 
       coords.set(task.id, {
         left,
         width,
         setupWidth,
         workWidth,
+        waitWidth,
         takedownWidth,
         y: headerHeight + index * rowHeight + 10,
         task,
@@ -195,7 +195,9 @@ export function GanttChart({
               <th scope="col">Focused Duration</th>
               <th scope="col">Setup Time</th>
               <th scope="col">Takedown Time</th>
+              <th scope="col">Unattended Wait</th>
               <th scope="col">Critical Path</th>
+              <th scope="col">Conflicts</th>
             </tr>
           </thead>
           <tbody>
@@ -207,7 +209,9 @@ export function GanttChart({
                 <td>{formatMinutes(t.baseDurationMinutes)}</td>
                 <td>{t.setupMinutes} min</td>
                 <td>{t.takedownMinutes} min</td>
+                <td>{formatMinutes(t.unattendedMinutes ?? 0)}</td>
                 <td>{t.isCritical ? "Yes (Critical Path)" : "No"}</td>
+                <td>{t.conflicts?.map((c) => c.message).join(" ") || "None"}</td>
               </tr>
             ))}
           </tbody>
@@ -228,6 +232,10 @@ export function GanttChart({
             <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-xs bg-zinc-400 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:4px_4px] border border-zinc-500 inline-block" aria-hidden="true" />
               <span>Setup / Takedown Buffer</span>
+            </span>
+            <span className="flex items-center space-x-1.5">
+              <span className="w-3 h-3 rounded-xs bg-teal-50 border-2 border-dashed border-teal-600 inline-block" aria-hidden="true" />
+              <span>Unattended Wait</span>
             </span>
             <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-xs bg-red-600 ring-2 ring-red-400 inline-block" aria-hidden="true" />
@@ -369,9 +377,9 @@ export function GanttChart({
                     {format(col.date, "EEE, MMM d")}
                   </span>
                   <div className="flex justify-between text-[11px] text-zinc-600 dark:text-zinc-400 font-mono">
-                    <span>08:00</span>
-                    <span>13:00</span>
-                    <span>18:00</span>
+                    <span>00:00</span>
+                    <span>12:00</span>
+                    <span aria-hidden="true" />
                   </div>
                 </div>
               ))}
@@ -449,7 +457,7 @@ export function GanttChart({
 
             {/* Interactive Task Bars */}
             {Array.from(taskCoordinates.values()).map(
-              ({ left, width, setupWidth, workWidth, takedownWidth, y, task }) => {
+              ({ left, width, setupWidth, workWidth, waitWidth, takedownWidth, y, task }) => {
                 const isHovered = hoveredTaskId === task.id;
                 const formattedStart = task.scheduledStart
                   ? format(new Date(task.scheduledStart), "EEE h:mm a")
@@ -487,7 +495,7 @@ export function GanttChart({
                   >
                     {/* 1. Setup Cap (Warm-up buffer) */}
                     <div
-                      style={{ width: `${setupWidth}px` }}
+                      style={{ width: `${setupWidth}px`, display: setupWidth > 0 ? undefined : "none" }}
                       className="h-full bg-blue-200 dark:bg-blue-950 border-r border-blue-400 flex items-center justify-center relative overflow-hidden"
                       title={`Setup: ${task.setupMinutes}m prep`}
                     >
@@ -505,7 +513,7 @@ export function GanttChart({
                         width: `${workWidth}px`,
                         backgroundColor: task.color || "#2563eb",
                       }}
-                      className="h-full flex items-center px-2 text-white text-xs font-bold truncate relative"
+                      className="h-full flex-shrink-0 flex items-center px-2 text-white text-xs font-bold truncate relative"
                     >
                       <span className="truncate drop-shadow-xs">{task.title}</span>
 
@@ -518,9 +526,24 @@ export function GanttChart({
                       )}
                     </div>
 
-                    {/* 3. Takedown Cap (Wrap-up buffer) */}
+                    {/* 3. Unattended wait: the person is free here */}
+                    {waitWidth > 0 && (
+                      <div
+                        style={{ width: `${waitWidth}px` }}
+                        className="h-full flex-shrink-0 bg-teal-50 dark:bg-teal-950 border-y-2 border-dashed border-teal-600 flex items-center justify-center overflow-hidden"
+                        title={`Unattended: ${formatMinutes(task.unattendedMinutes ?? 0)}`}
+                      >
+                        {waitWidth > 40 && (
+                          <span className="text-[10px] font-bold text-teal-950 dark:text-teal-100">
+                            wait
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 4. Takedown Cap (Wrap-up buffer) */}
                     <div
-                      style={{ width: `${takedownWidth}px` }}
+                      style={{ width: `${takedownWidth}px`, display: takedownWidth > 0 ? undefined : "none" }}
                       className="h-full bg-indigo-200 dark:bg-indigo-950 border-l border-indigo-400 flex items-center justify-center relative overflow-hidden"
                       title={`Takedown: ${task.takedownMinutes}m wrap-up`}
                     >
@@ -554,11 +577,21 @@ export function GanttChart({
                           <div className="text-blue-300 font-medium">
                             Setup Prep: +{task.setupMinutes}m | Takedown Clean: +{task.takedownMinutes}m
                           </div>
-                          {task.totalFloatMinutes !== null && (
+                          {(task.unattendedMinutes ?? 0) > 0 && (
+                            <div className="text-teal-300 font-medium">
+                              Unattended wait: {formatMinutes(task.unattendedMinutes ?? 0)}
+                            </div>
+                          )}
+                          {task.totalFloatMinutes !== null && task.totalFloatMinutes !== undefined && (
                             <div className="text-zinc-400">
                               Schedule Float: {task.totalFloatMinutes}m
                             </div>
                           )}
+                          {task.conflicts?.map((c) => (
+                            <div key={c.type} className="text-amber-300 font-semibold">
+                              ⚠ {c.message}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

@@ -15,13 +15,24 @@ export interface SettingsDTO {
   workingHoursEnd: string;
   workDays: string;
   projectStartDate: string | null;
+  levelResources: boolean;
+  timezone: string | null;
+}
+
+export interface ConflictDTO {
+  taskId: string;
+  type: string;
+  message: string;
+  minutes?: number;
 }
 
 export interface ScheduleOverview {
   projectStart: string;
   projectEnd: string;
+  now: string;
   criticalPathTaskIds: string[];
   hasCycle: boolean;
+  conflicts: ConflictDTO[];
 }
 
 export interface ScheduleResponse {

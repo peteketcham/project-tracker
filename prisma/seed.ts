@@ -73,7 +73,8 @@ async function main() {
       description: "Stuff aromatics, truss bird, baste hourly, check internal temp reaches 165°F, and rest on carving board.",
       status: "IN_PROGRESS",
       priority: "URGENT",
-      baseDurationMinutes: 210, // 3.5 hours roasting
+      baseDurationMinutes: 30, // Trussing, stuffing aromatics, getting it in the oven
+      unattendedMinutes: 180, // 3 hours in the oven: other dishes fit in here
       setupMinutes: 25, // Oven preheat, roasting pan rack positioning
       takedownMinutes: 30, // Turkey resting buffer (crucial context takedown!)
       constraintType: "ASAP",
@@ -232,6 +233,24 @@ async function main() {
       successorId: task8.id,
       type: "FS",
       lagMinutes: 0,
+    },
+  });
+
+  // The turkey is under way: setup, then an open work session
+  await prisma.workSession.create({
+    data: {
+      taskId: task3.id,
+      sessionType: "SETUP",
+      startTime: new Date(baseStart.getTime() + 230 * 60 * 1000),
+      endTime: new Date(baseStart.getTime() + 255 * 60 * 1000),
+      durationMinutes: 25,
+    },
+  });
+  await prisma.workSession.create({
+    data: {
+      taskId: task3.id,
+      sessionType: "WORK",
+      startTime: new Date(baseStart.getTime() + 255 * 60 * 1000),
     },
   });
 

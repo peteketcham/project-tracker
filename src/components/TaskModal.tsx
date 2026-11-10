@@ -44,6 +44,8 @@ function TaskModalForm({
   const [baseDurationMinutes, setBaseDurationMinutes] = useState(task?.baseDurationMinutes ?? 60);
   const [setupMinutes, setSetupMinutes] = useState(task?.setupMinutes ?? 15);
   const [takedownMinutes, setTakedownMinutes] = useState(task?.takedownMinutes ?? 10);
+  const [unattendedMinutes, setUnattendedMinutes] = useState(task?.unattendedMinutes ?? 0);
+  const [assignee, setAssignee] = useState(task?.assignee ?? "");
   const [constraintType, setConstraintType] = useState(task?.constraintType ?? "ASAP");
   const [pinnedDate, setPinnedDate] = useState(
     task?.pinnedDate ? format(new Date(task.pinnedDate), "yyyy-MM-dd'T'HH:mm") : ""
@@ -79,6 +81,8 @@ function TaskModalForm({
         baseDurationMinutes: Number(baseDurationMinutes),
         setupMinutes: Number(setupMinutes),
         takedownMinutes: Number(takedownMinutes),
+        unattendedMinutes: Number(unattendedMinutes) || 0,
+        assignee: assignee.trim() || null,
         constraintType,
         pinnedDate:
           pinnedDate && constraintType !== "ASAP" && constraintType !== "ALAP"
@@ -317,6 +321,58 @@ function TaskModalForm({
                 />
                 <span className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5 block font-medium">
                   Cleaning station & saving state
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-blue-200 dark:border-blue-900/60">
+              <div>
+                <label
+                  htmlFor="task-unattended-input"
+                  className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
+                  Unattended Wait (Minutes)
+                </label>
+                <input
+                  id="task-unattended-input"
+                  type="number"
+                  min="0"
+                  step="5"
+                  value={unattendedMinutes}
+                  onChange={(e) => setUnattendedMinutes(Number(e.target.value))}
+                  aria-describedby="task-unattended-help"
+                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+                />
+                <span
+                  id="task-unattended-help"
+                  className="text-[11px] text-teal-800 dark:text-teal-300 mt-0.5 block font-medium"
+                >
+                  Oven, curing, a long build: runs around the clock after the work and before
+                  takedown; other tasks can fill it
+                </span>
+              </div>
+              <div>
+                <label
+                  htmlFor="task-assignee-input"
+                  className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+                >
+                  Who does it
+                </label>
+                <input
+                  id="task-assignee-input"
+                  type="text"
+                  maxLength={60}
+                  value={assignee}
+                  onChange={(e) => setAssignee(e.target.value)}
+                  placeholder="Me"
+                  aria-describedby="task-assignee-help"
+                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+                />
+                <span
+                  id="task-assignee-help"
+                  className="text-[11px] text-zinc-600 dark:text-zinc-400 mt-0.5 block"
+                >
+                  Leave empty for yourself. One person is never scheduled on two things at once.
                 </span>
               </div>
             </div>

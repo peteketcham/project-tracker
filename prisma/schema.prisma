@@ -16,6 +16,8 @@ model Task {
   baseDurationMinutes Int              @default(60)
   setupMinutes        Int              @default(15)
   takedownMinutes     Int              @default(10)
+  unattendedMinutes   Int              @default(0)         // waiting time (oven, curing) between work and takedown; elapsed clock time
+  assignee            String?                              // whose attention this needs; null = me
   constraintType      String           @default("ASAP")    // ASAP, ALAP, MUST_START_ON, MUST_FINISH_ON, SNET, FNLT
   pinnedDate          DateTime?
   scheduledStart      DateTime?
@@ -77,4 +79,6 @@ model ProjectSettings {
   autoCascade          Boolean @default(true)
   highlightCriticalPath Boolean @default(true)
   projectStartDate     DateTime?
+  levelResources       Boolean @default(true)  // never double-book a person
+  timezone             String?                 // IANA zone for working hours; null = server zone
 }

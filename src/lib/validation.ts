@@ -63,6 +63,11 @@ const taskFields = {
   baseDurationMinutes: minutesSchema.min(1, "Must be at least 1 minute"),
   setupMinutes: minutesSchema,
   takedownMinutes: minutesSchema,
+  unattendedMinutes: minutesSchema,
+  assignee: z
+    .union([z.null(), z.string().trim().max(60)])
+    .transform((v) => (v ? v : null))
+    .optional(),
   constraintType: z.enum(CONSTRAINT_TYPES),
   pinnedDate: nullableDateSchema,
   color: colorSchema,
@@ -94,6 +99,8 @@ export const taskCreateObject = z.object({
   baseDurationMinutes: taskFields.baseDurationMinutes.default(60),
   setupMinutes: taskFields.setupMinutes.default(15),
   takedownMinutes: taskFields.takedownMinutes.default(10),
+  unattendedMinutes: taskFields.unattendedMinutes.default(0),
+  assignee: taskFields.assignee,
   constraintType: taskFields.constraintType.default("ASAP"),
   pinnedDate: taskFields.pinnedDate,
   color: taskFields.color.default("#3b82f6"),
@@ -117,6 +124,8 @@ export const taskUpdateObject = z.object({
   baseDurationMinutes: taskFields.baseDurationMinutes.optional(),
   setupMinutes: taskFields.setupMinutes.optional(),
   takedownMinutes: taskFields.takedownMinutes.optional(),
+  unattendedMinutes: taskFields.unattendedMinutes.optional(),
+  assignee: taskFields.assignee,
   constraintType: taskFields.constraintType.optional(),
   pinnedDate: taskFields.pinnedDate,
   color: taskFields.color.optional(),
