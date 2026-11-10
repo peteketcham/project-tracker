@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id                  String           @id @default(cuid())
+  title               String
+  description         String?
+  status              String           @default("BACKLOG") // BACKLOG, SCHEDULED, IN_PROGRESS, PAUSED, DONE
+  priority            String           @default("MEDIUM")  // LOW, MEDIUM, HIGH, URGENT
+  baseDurationMinutes Int              @default(60)
+  setupMinutes        Int              @default(15)
+  takedownMinutes     Int              @default(10)
+  constraintType      String           @default("ASAP")    // ASAP, ALAP, MUST_START_ON, MUST_FINISH_ON, SNET, FNLT
+  pinnedDate          DateTime?
+  scheduledStart      DateTime?
+  scheduledEnd        DateTime?
+  actualStart         DateTime?
+  actualEnd           DateTime?
+  color               String           @default("#3b82f6")
+  order               Int              @default(0)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  dependenciesAsSuccessor   TaskDependency[] @relation("SuccessorTasks")
+  dependenciesAsPredecessor TaskDependency[] @relation("PredecessorTasks")
+  workSessions              WorkSession[]
+  interruptionLogs          InterruptionLog[]
+}
+
+model TaskDependency {
+  id            String   @id @default(cuid())
+  predecessorId String
+  successorId   String
+  type          String   @default("FS") // FS, SS, FF, SF
+  lagMinutes    Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  predecessor   Task     @relation("PredecessorTasks", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor     Task     @relation("SuccessorTasks", fields: [successorId], references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+}
+
+model WorkSession {
+  id              String    @id @default(cuid())
+  taskId          String
+  sessionType     String    @default("WORK") // SETUP, WORK, TAKEDOWN
+  startTime       DateTime  @default(now())
+  endTime         DateTime?
+  durationMinutes Int       @default(0)
+  task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model InterruptionLog {
+  id                  String    @id @default(cuid())
+  taskId              String
+  pausedAt            DateTime  @default(now())
+  resumedAt           DateTime?
+  reason              String?
+  overheadAddedMinutes Int      @default(0)
+  task                Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model ProjectSettings {
+  id                   String  @id @default("default")
+  workingHoursStart    String  @default("09:00")
+  workingHoursEnd      String  @default("17:00")
+  workDays             String  @default("1,2,3,4,5") // Mon-Fri
+  defaultSetupMinutes  Int     @default(15)
+  defaultTakedownMinutes Int   @default(10)
+  autoCascade          Boolean @default(true)
+  highlightCriticalPath Boolean @default(true)
+  projectStartDate     DateTime?
+}
