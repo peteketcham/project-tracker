@@ -8,6 +8,7 @@ import { TaskModal } from "@/components/TaskModal";
 import { AIDecomposeModal } from "@/components/AIDecomposeModal";
 import { InterruptionModal } from "@/components/InterruptionModal";
 import { SettingsModal } from "@/components/SettingsModal";
+import { InsightsModal } from "@/components/InsightsModal";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { api, type NewDependency, type ScheduleResponse } from "@/lib/client";
 
@@ -25,6 +26,7 @@ export default function ProjectTrackerHome() {
   const [isAIDecomposeOpen, setIsAIDecomposeOpen] = useState(false);
   const [taskToInterrupt, setTaskToInterrupt] = useState<KanbanTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isInsightsOpen, setIsInsightsOpen] = useState(false);
 
   const tasks = data?.tasks ?? [];
   const dependencies = data?.dependencies ?? [];
@@ -194,6 +196,7 @@ export default function ProjectTrackerHome() {
         onOpenAIDecompose={() => setIsAIDecomposeOpen(true)}
         onRefresh={() => run(async () => "Schedule recalculated.")}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenInsights={() => setIsInsightsOpen(true)}
         scheduleOverview={scheduleOverview}
         totalInterruptionOverheadMinutes={totalInterruptionOverheadMinutes}
       />
@@ -287,6 +290,8 @@ export default function ProjectTrackerHome() {
           onChanged={() => void refresh().catch((e: Error) => setError(e.message))}
         />
       )}
+
+      {isInsightsOpen && <InsightsModal onClose={() => setIsInsightsOpen(false)} />}
 
       <InterruptionModal
         isOpen={taskToInterrupt !== null}

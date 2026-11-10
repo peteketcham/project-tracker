@@ -9,6 +9,7 @@ import {
   Sparkles,
   Flame,
   Clock,
+  LineChart,
   RefreshCw,
   Settings,
   AlertTriangle,
@@ -23,6 +24,7 @@ interface HeaderProps {
   onOpenAIDecompose: () => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
+  onOpenInsights: () => void;
   scheduleOverview?: {
     projectStart: string;
     projectEnd: string;
@@ -39,6 +41,7 @@ export function Header({
   onOpenAIDecompose,
   onRefresh,
   onOpenSettings,
+  onOpenInsights,
   scheduleOverview,
   totalInterruptionOverheadMinutes,
 }: HeaderProps) {
@@ -173,6 +176,15 @@ export function Header({
               className="p-2 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none transition"
             >
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenInsights}
+              aria-label="Insights: interruption cost and estimate accuracy"
+              className="p-2 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none transition"
+            >
+              <LineChart className="w-4 h-4" aria-hidden="true" />
             </button>
 
             <button
