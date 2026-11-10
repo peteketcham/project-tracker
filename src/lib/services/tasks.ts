@@ -138,6 +138,13 @@ export async function removeDependency(id: string) {
   return { success: true, id };
 }
 
+export async function removeDependencyBetween(predecessorId: string, successorId: string) {
+  await prisma.taskDependency.delete({
+    where: { predecessorId_successorId: { predecessorId, successorId } },
+  });
+  return { success: true };
+}
+
 /* ------------------------------------------------------------------ plans */
 
 /** Creates a whole batch of tasks and links, or nothing at all. */

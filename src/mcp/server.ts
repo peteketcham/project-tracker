@@ -3,11 +3,16 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z, type ZodRawShape } from "zod";
 import { prisma } from "../lib/prisma";
 import { describeError } from "../lib/errors";
-import { getSchedule } from "../lib/services/schedule";
+import { getSchedule, runWhatIf } from "../lib/services/schedule";
+import { getInsights } from "../lib/services/insights";
+import { addTimeOff, listTimeOff } from "../lib/services/calendar";
 import {
   addDependency,
   createPlan,
   createTask,
+  deleteTask,
+  removeDependency,
+  removeDependencyBetween,
   transitionTask,
   updateTask,
 } from "../lib/services/tasks";
@@ -22,7 +27,12 @@ import {
   sessionActionSchema,
   taskCreateObject,
   taskCreateSchema,
+  taskUpdateObject,
   taskUpdateSchema,
+  timeOffObject,
+  timeOffSchema,
+  whatIfObject,
+  whatIfSchema,
 } from "../lib/validation";
 
 /**
@@ -30,7 +40,7 @@ import {
  * calls the shared services, so agents are held to the same rules as the UI.
  */
 
-const server = new McpServer({ name: "project-tracker-mcp", version: "1.1.0" });
+const server = new McpServer({ name: "project-tracker-mcp", version: "1.2.0" });
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
@@ -168,6 +178,83 @@ tool(
     const task = await transitionTask(taskId, action, { reason, elapsedMinutes });
     return `Task "${task.title}" is now ${task.status}.`;
   }
+);
+
+tool(
+  "update_task",
+  "Changes fields of a task. Setting status moves it through the state machine (invalid moves are refused).",
+  { taskId: idSchema, ...taskUpdateObject.shape },
+  async (args) => {
+    const { taskId, ...fields } = args as { taskId: string };
+    const task = await updateTask(taskId, taskUpdateSchema.parse(fields));
+    return `Updated task "${task.title}" (${task.status}).`;
+  }
+);
+
+tool(
+  "delete_task",
+  "Permanently deletes a task with its dependencies, sessions and interruption log. Cannot be undone.",
+  { taskId: idSchema },
+  async (args) => {
+    await deleteTask(idSchema.parse(args.taskId));
+    return "Task deleted.";
+  }
+);
+
+tool(
+  "remove_dependency",
+  "Removes a dependency, by its id or by the pair of task ids it links",
+  {
+    dependencyId: idSchema.optional(),
+    predecessorId: idSchema.optional(),
+    successorId: idSchema.optional(),
+  },
+  async (args) => {
+    const { dependencyId, predecessorId, successorId } = z
+      .object({
+        dependencyId: idSchema.optional(),
+        predecessorId: idSchema.optional(),
+        successorId: idSchema.optional(),
+      })
+      .refine((v) => Boolean(v.dependencyId) !== Boolean(v.predecessorId && v.successorId), {
+        message: "Give dependencyId, or both predecessorId and successorId",
+      })
+      .parse(args);
+    if (dependencyId) await removeDependency(dependencyId);
+    else await removeDependencyBetween(predecessorId!, successorId!);
+    return "Dependency removed.";
+  }
+);
+
+tool(
+  "what_if",
+  "Tries a hypothetical change (interrupt the running task, extend a task, take time off, drop a task) and reports which tasks slip and by how many working minutes. Saves nothing.",
+  whatIfObject.shape,
+  async (args) => runWhatIf(whatIfSchema.parse(args))
+);
+
+tool(
+  "list_time_off",
+  "Lists upcoming time off and imported busy blocks (non-working time)",
+  {},
+  async () => listTimeOff()
+);
+
+tool(
+  "add_time_off",
+  "Blocks out a period as non-working time; the schedule moves around it",
+  timeOffObject.shape,
+  async (args) => {
+    const t = await addTimeOff(timeOffSchema.parse(args));
+    return `Blocked out "${t.title}" from ${t.start.toISOString()} to ${t.end.toISOString()}.`;
+  }
+);
+
+tool(
+  "get_insights",
+  "Reports what logged sessions show: interruption counts and overhead by reason and week, average focus stretch, and estimated vs actual focused work",
+  {},
+  async () => getInsights()
 );
 
 async function run() {

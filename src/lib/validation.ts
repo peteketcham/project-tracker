@@ -283,3 +283,37 @@ export const icsImportSchema = z
 
 export type SettingsUpdateInput = z.infer<typeof settingsUpdateSchema>;
 export type TimeOffInput = z.infer<typeof timeOffSchema>;
+
+/* ---------------------------------------------------------------- what-if */
+
+export const whatIfObject = z.object({
+  type: z
+    .enum(["interrupt", "extend", "time_off", "drop"])
+    .describe(
+      "interrupt: pause the given task now. extend: add minutes of work to it. time_off: block out start..end. drop: remove the task."
+    ),
+  taskId: idSchema.optional(),
+  minutes: z.coerce.number().int().min(-MAX_MINUTES).max(MAX_MINUTES).optional(),
+  start: dateSchema.optional(),
+  end: dateSchema.optional(),
+});
+
+export const whatIfSchema = whatIfObject.superRefine((v, ctx) => {
+  const need = (field: "taskId" | "minutes" | "start" | "end") => {
+    if (v[field] === undefined) {
+      ctx.addIssue({ code: "custom", path: [field], message: `${v.type} needs ${field}` });
+    }
+  };
+  if (v.type === "time_off") {
+    need("start");
+    need("end");
+    if (v.start && v.end && v.end <= v.start) {
+      ctx.addIssue({ code: "custom", path: ["end"], message: "Must end after it starts" });
+    }
+  } else {
+    need("taskId");
+    if (v.type === "extend") need("minutes");
+  }
+});
+
+export type WhatIfInput = z.infer<typeof whatIfSchema>;

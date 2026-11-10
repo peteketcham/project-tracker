@@ -22,6 +22,34 @@ async function main() {
     console.log(` - ${t.name}: ${t.description}`);
   }
 
+  const expected = [
+    "list_tasks",
+    "create_task",
+    "bulk_decompose_project",
+    "add_dependency",
+    "pin_task",
+    "get_schedule_summary",
+    "track_work_session",
+    "update_task",
+    "delete_task",
+    "remove_dependency",
+    "what_if",
+    "list_time_off",
+    "add_time_off",
+    "get_insights",
+  ];
+  const names = new Set(tools.tools.map((t) => t.name));
+  const missing = expected.filter((n) => !names.has(n));
+  if (missing.length > 0) throw new Error(`Missing MCP tools: ${missing.join(", ")}`);
+
+  // Bad input must come back as a tool error, not a crash or a write.
+  const bad = await client.callTool({
+    name: "create_task",
+    arguments: { title: "x", baseDurationMinutes: -5 },
+  });
+  if (!bad.isError) throw new Error("create_task accepted negative minutes");
+  console.log("Invalid input was refused as expected.");
+
   // Call get_schedule_summary
   console.log("\nCalling 'get_schedule_summary'...");
   const summaryResult = await client.callTool({
@@ -29,6 +57,7 @@ async function main() {
     arguments: {},
   });
   const content = summaryResult.content as Array<{ text?: string }>;
+  if (summaryResult.isError) throw new Error(`get_schedule_summary failed: ${content[0]?.text}`);
   console.log("Summary result:", content[0]?.text?.slice(0, 300) + "...");
 
   await client.close();

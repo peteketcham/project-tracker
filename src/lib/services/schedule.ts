@@ -1,5 +1,8 @@
 import { prisma } from "../prisma";
 import { calculateSchedule } from "../scheduler/engine";
+import { whatIf, type WhatIfChange } from "../scheduler/whatif";
+import { ApiError } from "../errors";
+import type { WhatIfInput } from "../validation";
 import type {
   BusyBlock,
   ConstraintType,
@@ -151,4 +154,23 @@ export async function getSchedule(now: Date = new Date()) {
     },
     schedule,
   };
+}
+
+/** Tries a hypothetical change against the live plan. Nothing is saved. */
+export async function runWhatIf(input: WhatIfInput, now: Date = new Date()) {
+  const { schedulerTasks, schedulerDeps, calendar } = await loadScheduleInputs(now);
+  let change: WhatIfChange;
+  if (input.type === "time_off") change = { type: "time_off", start: input.start!, end: input.end! };
+  else if (input.type === "extend") change = { type: "extend", taskId: input.taskId!, minutes: input.minutes! };
+  else change = { type: input.type, taskId: input.taskId! };
+
+  if (change.type !== "time_off") {
+    const id = change.taskId;
+    const task = schedulerTasks.find((t) => t.id === id);
+    if (!task) throw new ApiError(404, "Task not found in the schedule (backlog tasks are not scheduled)");
+    if (change.type === "interrupt" && task.status !== "IN_PROGRESS") {
+      throw new ApiError(409, `"${task.title}" is not in progress, so it cannot be interrupted`);
+    }
+  }
+  return whatIf(schedulerTasks, schedulerDeps, calendar, now, change);
 }
