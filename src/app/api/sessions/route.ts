@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pauseTask, resumeTask } from "@/lib/scheduler/interruption";
+import { route, readJson } from "@/lib/api";
+import { sessionActionSchema } from "@/lib/validation";
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { taskId, action, reason, elapsedMinutes } = body;
-
-    if (!taskId || !action) {
-      return NextResponse.json(
-        { error: "taskId and action are required" },
-        { status: 400 }
-      );
-    }
+export const POST = route(async (req) => {
+  {
+    const { taskId, action, reason, elapsedMinutes } = await readJson(req, sessionActionSchema);
 
     if (action === "PAUSE") {
       const task = await pauseTask({
@@ -115,8 +109,5 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-  } catch (error: any) {
-    console.error("Session action error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});

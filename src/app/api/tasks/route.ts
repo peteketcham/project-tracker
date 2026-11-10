@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateSchedule } from "@/lib/scheduler/engine";
 import { WorkingCalendarSettings } from "@/lib/scheduler/types";
+import { route, readJson, created } from "@/lib/api";
+import { taskCreateSchema } from "@/lib/validation";
 
-export async function GET() {
-  try {
+export const GET = route(async () => {
+  {
     let settings = await prisma.projectSettings.findUnique({
       where: { id: "default" },
     });
@@ -112,36 +114,12 @@ export async function GET() {
         hasCycle: schedule.hasCycle,
       },
     });
-  } catch (error: any) {
-    console.error("Failed to fetch tasks:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const count = await prisma.task.count();
-
-    const task = await prisma.task.create({
-      data: {
-        title: body.title || "Untitled Task",
-        description: body.description || null,
-        status: body.status || "SCHEDULED",
-        priority: body.priority || "MEDIUM",
-        baseDurationMinutes: Number(body.baseDurationMinutes) || 60,
-        setupMinutes: body.setupMinutes !== undefined ? Number(body.setupMinutes) : 15,
-        takedownMinutes: body.takedownMinutes !== undefined ? Number(body.takedownMinutes) : 10,
-        constraintType: body.constraintType || "ASAP",
-        pinnedDate: body.pinnedDate ? new Date(body.pinnedDate) : null,
-        color: body.color || "#3b82f6",
-        order: count + 1,
-      },
-    });
-
-    return NextResponse.json(task, { status: 201 });
-  } catch (error: any) {
-    console.error("Failed to create task:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+export const POST = route(async (req) => {
+  const data = await readJson(req, taskCreateSchema);
+  const count = await prisma.task.count();
+  const task = await prisma.task.create({ data: { ...data, order: count + 1 } });
+  return created(task);
+});

@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { route, readJson } from "@/lib/api";
+import { decomposeRequestSchema } from "@/lib/validation";
 
-export async function POST(req: Request) {
-  try {
-    const { prompt, targetDays = 5 } = await req.json();
-
-    if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
-      return NextResponse.json(
-        { error: "A description of the project or activity is required" },
-        { status: 400 }
-      );
-    }
+export const POST = route(async (req) => {
+  {
+    const { prompt } = await readJson(req, decomposeRequestSchema);
 
     const keywords = prompt.toLowerCase();
     let decomposedTasks: Array<{
@@ -312,8 +307,5 @@ export async function POST(req: Request) {
       message: `Decomposed into ${createdTasks.length} sequenced tasks with setup and takedown buffers`,
       tasks: createdTasks,
     });
-  } catch (error: any) {
-    console.error("AI Decompose error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+});
