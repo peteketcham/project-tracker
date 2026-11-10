@@ -6,13 +6,11 @@ import {
   format,
   addDays,
   differenceInMinutes,
-  isSameDay,
   startOfDay,
-  addHours,
-  setHours,
 } from "date-fns";
 import { formatMinutes } from "@/lib/utils";
-import { Flame, Pin, Clock, ZoomIn, ZoomOut, Info } from "lucide-react";
+import { Flame, Pin, Save, Trash2 } from "lucide-react";
+import type { BaselineComparisonDTO, BaselineSummary } from "@/lib/client";
 
 interface GanttChartProps {
   tasks: KanbanTask[];
@@ -26,7 +24,14 @@ interface GanttChartProps {
   onTaskClick: (task: KanbanTask) => void;
   projectStartDate?: string;
   projectEndDate?: string;
+  baselines?: BaselineSummary[];
+  comparison?: BaselineComparisonDTO | null;
+  onSelectBaseline?: (id: string | null) => void;
+  onSaveBaseline?: (name: string) => Promise<void> | void;
+  onDeleteBaseline?: (id: string) => Promise<void> | void;
 }
+
+const signedMinutes = (m: number) => `${m > 0 ? "+" : m < 0 ? "−" : ""}${formatMinutes(Math.abs(m))}`;
 
 type ZoomLevel = "hour" | "day" | "week";
 
@@ -36,7 +41,17 @@ export function GanttChart({
   onTaskClick,
   projectStartDate,
   projectEndDate,
+  baselines = [],
+  comparison = null,
+  onSelectBaseline,
+  onSaveBaseline,
+  onDeleteBaseline,
 }: GanttChartProps) {
+  const [baselineName, setBaselineName] = useState("");
+  const baselineByTask = useMemo(
+    () => new Map((comparison?.tasks ?? []).map((t) => [t.taskId, t])),
+    [comparison]
+  );
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("day");
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -53,6 +68,11 @@ export function GanttChart({
     let start = projectStartDate ? new Date(projectStartDate) : new Date();
     let end = projectEndDate ? new Date(projectEndDate) : addDays(start, 5);
 
+    for (const b of comparison?.tasks ?? []) {
+      if (b.plannedStart && new Date(b.plannedStart) < start) start = new Date(b.plannedStart);
+      if (b.plannedEnd && new Date(b.plannedEnd) > end) end = new Date(b.plannedEnd);
+    }
+
     scheduledTasks.forEach((t) => {
       if (t.scheduledStart && new Date(t.scheduledStart) < start) {
         start = new Date(t.scheduledStart);
@@ -62,7 +82,7 @@ export function GanttChart({
       }
     });
 
-    start = setHours(startOfDay(start), 8);
+    start = startOfDay(start);
     end = addDays(end, 2);
 
     const totalMins = Math.max(600, differenceInMinutes(end, start));
@@ -78,7 +98,7 @@ export function GanttChart({
       totalMinutes: totalMins,
       pixelsPerMinute: ppm,
     };
-  }, [projectStartDate, projectEndDate, scheduledTasks, zoomLevel]);
+  }, [projectStartDate, projectEndDate, scheduledTasks, zoomLevel, comparison]);
 
   const timelineWidth = Math.max(900, totalMinutes * pixelsPerMinute);
   const rowHeight = 48;
@@ -100,7 +120,7 @@ export function GanttChart({
     return days;
   }, [timelineStart, timelineEnd, pixelsPerMinute]);
 
-  // Calculate task positions
+  // Calculate task positions from the scheduler's real segment times
   const taskCoordinates = useMemo(() => {
     const coords = new Map<
       string,
@@ -109,40 +129,41 @@ export function GanttChart({
         width: number;
         setupWidth: number;
         workWidth: number;
+        waitWidth: number;
         takedownWidth: number;
         y: number;
         task: KanbanTask;
       }
     >();
 
+    const x = (d: Date) => Math.max(0, differenceInMinutes(d, timelineStart)) * pixelsPerMinute;
+
     scheduledTasks.forEach((task, index) => {
       if (!task.scheduledStart || !task.scheduledEnd) return;
 
-      const taskStart = new Date(task.scheduledStart);
-      const taskEnd = new Date(task.scheduledEnd);
+      const start = new Date(task.scheduledStart);
+      const end = new Date(task.scheduledEnd);
+      const attendedEnd = task.attendedEnd ? new Date(task.attendedEnd) : end;
+      const takedownStart = task.takedownStart ? new Date(task.takedownStart) : attendedEnd;
 
-      const offsetMinutes = Math.max(0, differenceInMinutes(taskStart, timelineStart));
-      const durMinutes = Math.max(20, differenceInMinutes(taskEnd, taskStart));
+      const left = x(start);
+      const width = Math.max(35, x(end) - left);
+      const attendedWidth = Math.max(0, x(attendedEnd) - left);
+      const waitWidth = Math.max(0, x(takedownStart) - x(attendedEnd));
+      const takedownWidth =
+        task.status === "DONE" ? 0 : Math.max(0, Math.min(width, x(end) - x(takedownStart)));
 
-      const left = offsetMinutes * pixelsPerMinute;
-      const width = Math.max(35, durMinutes * pixelsPerMinute);
-
-      const totalPlanned =
-        task.totalPlannedDurationMinutes ||
-        task.setupMinutes + task.baseDurationMinutes + task.takedownMinutes;
-
-      const setupRatio = task.setupMinutes / totalPlanned;
-      const takedownRatio = task.takedownMinutes / totalPlanned;
-
-      const setupWidth = Math.max(8, width * setupRatio);
-      const takedownWidth = Math.max(8, width * takedownRatio);
-      const workWidth = Math.max(12, width - setupWidth - takedownWidth);
+      const setup = task.status === "DONE" ? 0 : task.setupMinutesApplied ?? task.setupMinutes;
+      const work = task.netWorkRemainingMinutes ?? task.baseDurationMinutes;
+      const setupWidth = setup + work > 0 ? attendedWidth * (setup / (setup + work)) : 0;
+      const workWidth = Math.max(12, width - setupWidth - waitWidth - takedownWidth);
 
       coords.set(task.id, {
         left,
         width,
         setupWidth,
         workWidth,
+        waitWidth,
         takedownWidth,
         y: headerHeight + index * rowHeight + 10,
         task,
@@ -197,7 +218,10 @@ export function GanttChart({
               <th scope="col">Focused Duration</th>
               <th scope="col">Setup Time</th>
               <th scope="col">Takedown Time</th>
+              <th scope="col">Unattended Wait</th>
               <th scope="col">Critical Path</th>
+              <th scope="col">Conflicts</th>
+              {comparison && <th scope="col">Slip against baseline {comparison.name}</th>}
             </tr>
           </thead>
           <tbody>
@@ -209,7 +233,16 @@ export function GanttChart({
                 <td>{formatMinutes(t.baseDurationMinutes)}</td>
                 <td>{t.setupMinutes} min</td>
                 <td>{t.takedownMinutes} min</td>
+                <td>{formatMinutes(t.unattendedMinutes ?? 0)}</td>
                 <td>{t.isCritical ? "Yes (Critical Path)" : "No"}</td>
+                <td>{t.conflicts?.map((c) => c.message).join(" ") || "None"}</td>
+                {comparison && (
+                  <td>
+                    {baselineByTask.get(t.id)?.plannedEnd
+                      ? signedMinutes(baselineByTask.get(t.id)!.slipMinutes)
+                      : "Not in baseline"}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -217,7 +250,7 @@ export function GanttChart({
       </div>
 
       {/* Gantt Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 text-xs">
+      <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 text-xs">
         <div className="flex items-center space-x-3">
           <span className="font-bold text-zinc-900 dark:text-zinc-100">
             Timeline Engine
@@ -232,11 +265,90 @@ export function GanttChart({
               <span>Setup / Takedown Buffer</span>
             </span>
             <span className="flex items-center space-x-1.5">
+              <span className="w-3 h-3 rounded-xs bg-teal-50 border-2 border-dashed border-teal-600 inline-block" aria-hidden="true" />
+              <span>Unattended Wait</span>
+            </span>
+            <span className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded-xs bg-red-600 ring-2 ring-red-400 inline-block" aria-hidden="true" />
               <span className="font-semibold text-red-900 dark:text-red-300">Critical Path</span>
             </span>
           </div>
         </div>
+
+        {/* Baseline: save the current dates, or compare against a saved set */}
+        {onSelectBaseline && onSaveBaseline && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <label htmlFor="gantt-baseline-select" className="font-semibold text-zinc-800 dark:text-zinc-200">
+              Compare to
+            </label>
+            <select
+              id="gantt-baseline-select"
+              value={comparison?.id ?? ""}
+              onChange={(e) => onSelectBaseline(e.target.value || null)}
+              className="px-2 py-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+            >
+              <option value="">No baseline</option>
+              {baselines.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({format(new Date(b.createdAt), "MMM d")})
+                </option>
+              ))}
+            </select>
+            {comparison && (
+              <>
+                <span
+                  className={`px-2 py-0.5 rounded font-bold border ${
+                    comparison.projectSlipMinutes > 0
+                      ? "bg-red-100 text-red-950 border-red-300 dark:bg-red-950/80 dark:text-red-100 dark:border-red-800"
+                      : "bg-emerald-100 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-100 dark:border-emerald-800"
+                  }`}
+                >
+                  Finish {comparison.projectSlipMinutes === 0 ? "on plan" : signedMinutes(comparison.projectSlipMinutes)}
+                  {comparison.slippedCount > 0 ? `, ${comparison.slippedCount} task(s) late` : ""}
+                </span>
+                {onDeleteBaseline && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteBaseline(comparison.id)}
+                    aria-label={`Delete baseline ${comparison.name}`}
+                    className="p-1 rounded text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/50 focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:outline-none"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </>
+            )}
+            <form
+              className="flex items-center gap-1"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!baselineName.trim()) return;
+                await onSaveBaseline(baselineName.trim());
+                setBaselineName("");
+              }}
+            >
+              <label htmlFor="gantt-baseline-name" className="sr-only">
+                Name for a new baseline
+              </label>
+              <input
+                id="gantt-baseline-name"
+                value={baselineName}
+                onChange={(e) => setBaselineName(e.target.value)}
+                maxLength={100}
+                placeholder="New baseline name"
+                className="w-36 px-2 py-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!baselineName.trim()}
+                className="flex items-center gap-1 px-2 py-1 rounded-md font-bold border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+              >
+                <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Save baseline</span>
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Zoom Controls */}
         <div
@@ -371,9 +483,9 @@ export function GanttChart({
                     {format(col.date, "EEE, MMM d")}
                   </span>
                   <div className="flex justify-between text-[11px] text-zinc-600 dark:text-zinc-400 font-mono">
-                    <span>08:00</span>
-                    <span>13:00</span>
-                    <span>18:00</span>
+                    <span>00:00</span>
+                    <span>12:00</span>
+                    <span aria-hidden="true" />
                   </div>
                 </div>
               ))}
@@ -449,9 +561,26 @@ export function GanttChart({
               })}
             </svg>
 
+            {/* Baseline ghost bars: where each task was planned when the baseline was saved */}
+            {comparison &&
+              Array.from(taskCoordinates.values()).map(({ y, task }) => {
+                const b = baselineByTask.get(task.id);
+                if (!b?.plannedStart || !b.plannedEnd) return null;
+                const from = Math.max(0, differenceInMinutes(new Date(b.plannedStart), timelineStart)) * pixelsPerMinute;
+                const to = Math.max(0, differenceInMinutes(new Date(b.plannedEnd), timelineStart)) * pixelsPerMinute;
+                return (
+                  <div
+                    key={`baseline-${task.id}`}
+                    aria-hidden="true"
+                    className="absolute h-1.5 rounded-full bg-zinc-500 dark:bg-zinc-400 z-10"
+                    style={{ left: `${from}px`, top: `${y + 32}px`, width: `${Math.max(4, to - from)}px` }}
+                  />
+                );
+              })}
+
             {/* Interactive Task Bars */}
             {Array.from(taskCoordinates.values()).map(
-              ({ left, width, setupWidth, workWidth, takedownWidth, y, task }) => {
+              ({ left, width, setupWidth, workWidth, waitWidth, takedownWidth, y, task }) => {
                 const isHovered = hoveredTaskId === task.id;
                 const formattedStart = task.scheduledStart
                   ? format(new Date(task.scheduledStart), "EEE h:mm a")
@@ -489,7 +618,7 @@ export function GanttChart({
                   >
                     {/* 1. Setup Cap (Warm-up buffer) */}
                     <div
-                      style={{ width: `${setupWidth}px` }}
+                      style={{ width: `${setupWidth}px`, display: setupWidth > 0 ? undefined : "none" }}
                       className="h-full bg-blue-200 dark:bg-blue-950 border-r border-blue-400 flex items-center justify-center relative overflow-hidden"
                       title={`Setup: ${task.setupMinutes}m prep`}
                     >
@@ -507,7 +636,7 @@ export function GanttChart({
                         width: `${workWidth}px`,
                         backgroundColor: task.color || "#2563eb",
                       }}
-                      className="h-full flex items-center px-2 text-white text-xs font-bold truncate relative"
+                      className="h-full flex-shrink-0 flex items-center px-2 text-white text-xs font-bold truncate relative"
                     >
                       <span className="truncate drop-shadow-xs">{task.title}</span>
 
@@ -520,9 +649,24 @@ export function GanttChart({
                       )}
                     </div>
 
-                    {/* 3. Takedown Cap (Wrap-up buffer) */}
+                    {/* 3. Unattended wait: the person is free here */}
+                    {waitWidth > 0 && (
+                      <div
+                        style={{ width: `${waitWidth}px` }}
+                        className="h-full flex-shrink-0 bg-teal-50 dark:bg-teal-950 border-y-2 border-dashed border-teal-600 flex items-center justify-center overflow-hidden"
+                        title={`Unattended: ${formatMinutes(task.unattendedMinutes ?? 0)}`}
+                      >
+                        {waitWidth > 40 && (
+                          <span className="text-[10px] font-bold text-teal-950 dark:text-teal-100">
+                            wait
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 4. Takedown Cap (Wrap-up buffer) */}
                     <div
-                      style={{ width: `${takedownWidth}px` }}
+                      style={{ width: `${takedownWidth}px`, display: takedownWidth > 0 ? undefined : "none" }}
                       className="h-full bg-indigo-200 dark:bg-indigo-950 border-l border-indigo-400 flex items-center justify-center relative overflow-hidden"
                       title={`Takedown: ${task.takedownMinutes}m wrap-up`}
                     >
@@ -556,11 +700,26 @@ export function GanttChart({
                           <div className="text-blue-300 font-medium">
                             Setup Prep: +{task.setupMinutes}m | Takedown Clean: +{task.takedownMinutes}m
                           </div>
-                          {task.totalFloatMinutes !== null && (
+                          {(task.unattendedMinutes ?? 0) > 0 && (
+                            <div className="text-teal-300 font-medium">
+                              Unattended wait: {formatMinutes(task.unattendedMinutes ?? 0)}
+                            </div>
+                          )}
+                          {task.totalFloatMinutes !== null && task.totalFloatMinutes !== undefined && (
                             <div className="text-zinc-400">
                               Schedule Float: {task.totalFloatMinutes}m
                             </div>
                           )}
+                          {baselineByTask.get(task.id)?.plannedEnd && (
+                            <div className="text-zinc-300">
+                              Against baseline: {signedMinutes(baselineByTask.get(task.id)!.slipMinutes) || "on plan"}
+                            </div>
+                          )}
+                          {task.conflicts?.map((c) => (
+                            <div key={c.type} className="text-amber-300 font-semibold">
+                              ⚠ {c.message}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}

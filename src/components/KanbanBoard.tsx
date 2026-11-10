@@ -2,16 +2,14 @@
 
 import React, { useState } from "react";
 import {
+  AlertTriangle,
   Clock,
   Play,
   Pause,
   CheckCircle2,
-  AlertCircle,
   Pin,
   Flame,
-  ArrowRight,
   Zap,
-  MoreVertical,
   Trash2,
   Edit2,
   Calendar,
@@ -28,6 +26,8 @@ export interface KanbanTask {
   baseDurationMinutes: number;
   setupMinutes: number;
   takedownMinutes: number;
+  unattendedMinutes?: number;
+  assignee?: string | null;
   constraintType: string;
   pinnedDate?: string | null;
   scheduledStart?: string | null;
@@ -39,6 +39,14 @@ export interface KanbanTask {
   isCritical?: boolean;
   totalFloatMinutes?: number | null;
   totalPlannedDurationMinutes?: number;
+  attendedEnd?: string | null;
+  takedownStart?: string | null;
+  setupMinutesApplied?: number;
+  takedownMinutesApplied?: number;
+  netWorkRemainingMinutes?: number;
+  effectiveDurationMinutes?: number | null;
+  overheadMinutes?: number;
+  conflicts?: Array<{ type: string; message: string; minutes?: number }>;
   dependenciesAsSuccessor?: Array<{ id: string; predecessor: { id: string; title: string } }>;
   dependenciesAsPredecessor?: Array<{ id: string; successor: { id: string; title: string } }>;
   interruptionLogs?: Array<{ id: string; reason?: string | null; overheadAddedMinutes: number }>;
@@ -194,6 +202,23 @@ export function KanbanBoard({
                           </span>
                         )}
 
+                        {/* Conflict Badge: the plan cannot honor something about this task */}
+                        {task.conflicts && task.conflicts.length > 0 && (
+                          <span
+                            className="flex items-center space-x-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-950 dark:bg-amber-950/80 dark:text-amber-200 border border-amber-400 dark:border-amber-700"
+                            title={task.conflicts.map((c) => c.message).join(" ")}
+                          >
+                            <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+                            <span>Conflict</span>
+                          </span>
+                        )}
+
+                        {task.assignee && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 border border-zinc-300 dark:border-zinc-700">
+                            {task.assignee}
+                          </span>
+                        )}
+
                         {/* Pinned Constraint Badge */}
                         {task.constraintType !== "ASAP" && (
                           <span
@@ -265,6 +290,14 @@ export function KanbanBoard({
                           Takedown: <strong className="text-indigo-700 dark:text-indigo-300 font-bold">+{task.takedownMinutes}m</strong>
                         </span>
                       </div>
+                      {(task.unattendedMinutes ?? 0) > 0 && (
+                        <div className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+                          Unattended wait:{" "}
+                          <strong className="text-teal-800 dark:text-teal-300 font-bold">
+                            {formatMinutes(task.unattendedMinutes ?? 0)}
+                          </strong>
+                        </div>
+                      )}
 
                       {/* Scheduled Time Slot */}
                       {task.scheduledStart && (

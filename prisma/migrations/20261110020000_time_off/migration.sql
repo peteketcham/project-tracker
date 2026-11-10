@@ -1,0 +1,9 @@
+-- CreateTable
+CREATE TABLE "TimeOff" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "title" TEXT NOT NULL,
+    "start" DATETIME NOT NULL,
+    "end" DATETIME NOT NULL,
+    "source" TEXT NOT NULL DEFAULT 'MANUAL',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

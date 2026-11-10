@@ -16,6 +16,8 @@ model Task {
   baseDurationMinutes Int              @default(60)
   setupMinutes        Int              @default(15)
   takedownMinutes     Int              @default(10)
+  unattendedMinutes   Int              @default(0)         // waiting time (oven, curing) between work and takedown; elapsed clock time
+  assignee            String?                              // whose attention this needs; null = me
   constraintType      String           @default("ASAP")    // ASAP, ALAP, MUST_START_ON, MUST_FINISH_ON, SNET, FNLT
   pinnedDate          DateTime?
   scheduledStart      DateTime?
@@ -77,4 +79,37 @@ model ProjectSettings {
   autoCascade          Boolean @default(true)
   highlightCriticalPath Boolean @default(true)
   projectStartDate     DateTime?
+  levelResources       Boolean @default(true)  // never double-book a person
+  timezone             String?                 // IANA zone for working hours; null = server zone
+}
+
+// Time that is not available for work: a day off, an appointment, an imported calendar event.
+model TimeOff {
+  id        String   @id @default(cuid())
+  title     String
+  start     DateTime
+  end       DateTime
+  source    String   @default("MANUAL") // MANUAL, ICS
+  createdAt DateTime @default(now())
+}
+
+// A saved copy of the plan's dates, to measure slip against later.
+model Baseline {
+  id         String          @id @default(cuid())
+  name       String
+  projectEnd DateTime
+  createdAt  DateTime        @default(now())
+  entries    BaselineEntry[]
+}
+
+model BaselineEntry {
+  id           String   @id @default(cuid())
+  baselineId   String
+  taskId       String // not a foreign key: the entry outlives a deleted task
+  title        String
+  plannedStart DateTime
+  plannedEnd   DateTime
+  baseline     Baseline @relation(fields: [baselineId], references: [id], onDelete: Cascade)
+
+  @@index([baselineId])
 }
