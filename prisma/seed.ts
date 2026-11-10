@@ -7,6 +7,8 @@ async function main() {
   console.log("Seeding project tracker with real-world non-technical projects...");
 
   // Clean existing records
+  await prisma.baseline.deleteMany();
+  await prisma.timeOff.deleteMany();
   await prisma.interruptionLog.deleteMany();
   await prisma.workSession.deleteMany();
   await prisma.taskDependency.deleteMany();
