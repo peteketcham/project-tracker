@@ -10,7 +10,13 @@ import { InterruptionModal } from "@/components/InterruptionModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { InsightsModal } from "@/components/InsightsModal";
 import { AlertTriangle, Loader2, X } from "lucide-react";
-import { api, type NewDependency, type ScheduleResponse } from "@/lib/client";
+import {
+  api,
+  type BaselineComparisonDTO,
+  type BaselineSummary,
+  type NewDependency,
+  type ScheduleResponse,
+} from "@/lib/client";
 
 type ViewMode = "kanban" | "gantt" | "split";
 
@@ -28,6 +34,10 @@ export default function ProjectTrackerHome() {
   const [taskToInterrupt, setTaskToInterrupt] = useState<KanbanTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
+
+  const [baselines, setBaselines] = useState<BaselineSummary[]>([]);
+  const [baselineId, setBaselineId] = useState<string | null>(null);
+  const [comparison, setComparison] = useState<BaselineComparisonDTO | null>(null);
 
   const tasks = data?.tasks ?? [];
   const dependencies = data?.dependencies ?? [];
@@ -48,6 +58,9 @@ export default function ProjectTrackerHome() {
     api<ScheduleResponse>("/api/tasks")
       .then((d) => alive && setData(d))
       .catch((e: Error) => alive && setError(e.message));
+    api<BaselineSummary[]>("/api/baselines")
+      .then((b) => alive && setBaselines(b))
+      .catch(() => undefined);
     api<DecomposeMode>("/api/decompose")
       .then((m) => alive && setDecomposeMode(m))
       .catch(() => undefined);
@@ -55,6 +68,18 @@ export default function ProjectTrackerHome() {
       alive = false;
     };
   }, []);
+
+  // Re-compare whenever the chosen baseline or the plan changes.
+  useEffect(() => {
+    if (!baselineId) return;
+    let alive = true;
+    api<BaselineComparisonDTO>(`/api/baselines/${baselineId}`)
+      .then((c) => alive && setComparison(c))
+      .catch((e: Error) => alive && setError(e.message));
+    return () => {
+      alive = false;
+    };
+  }, [baselineId, data]);
 
   /** Runs a change, then reloads the schedule. Failures are shown and announced, never swallowed. */
   const run = useCallback(
@@ -175,6 +200,25 @@ export default function ProjectTrackerHome() {
       onTaskClick={openTask}
       projectStartDate={scheduleOverview?.projectStart}
       projectEndDate={scheduleOverview?.projectEnd}
+      baselines={baselines}
+      comparison={baselineId && comparison?.id === baselineId ? comparison : null}
+      onSelectBaseline={setBaselineId}
+      onSaveBaseline={(name) =>
+        run(async () => {
+          const saved = await api<BaselineSummary>("/api/baselines", "POST", { name });
+          setBaselines(await api<BaselineSummary[]>("/api/baselines"));
+          setBaselineId(saved.id);
+          return `Baseline "${name}" saved.`;
+        })
+      }
+      onDeleteBaseline={(id) =>
+        run(async () => {
+          await api(`/api/baselines/${id}`, "DELETE");
+          setBaselineId(null);
+          setBaselines(await api<BaselineSummary[]>("/api/baselines"));
+          return "Baseline deleted.";
+        })
+      }
     />
   );
 

@@ -92,3 +92,24 @@ model TimeOff {
   source    String   @default("MANUAL") // MANUAL, ICS
   createdAt DateTime @default(now())
 }
+
+// A saved copy of the plan's dates, to measure slip against later.
+model Baseline {
+  id         String          @id @default(cuid())
+  name       String
+  projectEnd DateTime
+  createdAt  DateTime        @default(now())
+  entries    BaselineEntry[]
+}
+
+model BaselineEntry {
+  id           String   @id @default(cuid())
+  baselineId   String
+  taskId       String // not a foreign key: the entry outlives a deleted task
+  title        String
+  plannedStart DateTime
+  plannedEnd   DateTime
+  baseline     Baseline @relation(fields: [baselineId], references: [id], onDelete: Cascade)
+
+  @@index([baselineId])
+}

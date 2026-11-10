@@ -42,6 +42,28 @@ export interface ScheduleResponse {
   scheduleOverview: ScheduleOverview;
 }
 
+export interface BaselineSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  taskCount: number;
+}
+
+export interface BaselineComparisonDTO {
+  id: string;
+  name: string;
+  projectSlipMinutes: number;
+  slippedCount: number;
+  tasks: Array<{
+    taskId: string;
+    title: string;
+    state: "ON_PLAN" | "SLIPPED" | "AHEAD" | "REMOVED" | "ADDED";
+    plannedStart: string | null;
+    plannedEnd: string | null;
+    slipMinutes: number;
+  }>;
+}
+
 export interface NewDependency {
   predecessorId: string;
   type: string;

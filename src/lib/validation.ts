@@ -317,3 +317,130 @@ export const whatIfSchema = whatIfObject.superRefine((v, ctx) => {
 });
 
 export type WhatIfInput = z.infer<typeof whatIfSchema>;
+
+/* --------------------------------------------------- baselines and backup */
+
+export const baselineCreateSchema = z.object({
+  name: z.string().trim().min(1, "Give the baseline a name").max(100),
+});
+
+const backupDate = z.coerce.date();
+const backupNullableDate = z.union([z.null(), z.coerce.date()]).optional();
+
+/** The shape written by GET /api/export and accepted by POST /api/import. */
+export const backupSchema = z.object({
+  version: z.literal(1),
+  settings: z
+    .object({
+      workingHoursStart: timeOfDay,
+      workingHoursEnd: timeOfDay,
+      workDays: z.string().regex(/^[0-6](,[0-6])*$/),
+      defaultSetupMinutes: minutesSchema.optional(),
+      defaultTakedownMinutes: minutesSchema.optional(),
+      autoCascade: z.boolean().optional(),
+      highlightCriticalPath: z.boolean().optional(),
+      projectStartDate: backupNullableDate,
+      levelResources: z.boolean().optional(),
+      timezone: z.string().max(100).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  tasks: z
+    .array(
+      z.object({
+        id: idSchema,
+        title: taskFields.title,
+        description: z.string().max(5000).nullable().optional(),
+        status: z.enum(TASK_STATUSES),
+        priority: z.enum(TASK_PRIORITIES),
+        baseDurationMinutes: minutesSchema,
+        setupMinutes: minutesSchema,
+        takedownMinutes: minutesSchema,
+        unattendedMinutes: minutesSchema.default(0),
+        assignee: z.string().max(60).nullable().optional(),
+        constraintType: z.enum(CONSTRAINT_TYPES),
+        pinnedDate: backupNullableDate,
+        actualStart: backupNullableDate,
+        actualEnd: backupNullableDate,
+        color: colorSchema,
+        order: z.number().int(),
+        createdAt: backupDate.optional(),
+      })
+    )
+    .max(10_000),
+  dependencies: z
+    .array(
+      z.object({
+        id: idSchema,
+        predecessorId: idSchema,
+        successorId: idSchema,
+        type: z.enum(DEPENDENCY_TYPES),
+        lagMinutes: z.number().int(),
+      })
+    )
+    .max(50_000),
+  workSessions: z
+    .array(
+      z.object({
+        id: idSchema,
+        taskId: idSchema,
+        sessionType: z.enum(["SETUP", "WORK", "TAKEDOWN"]),
+        startTime: backupDate,
+        endTime: backupNullableDate,
+        durationMinutes: minutesSchema,
+      })
+    )
+    .max(200_000),
+  interruptionLogs: z
+    .array(
+      z.object({
+        id: idSchema,
+        taskId: idSchema,
+        pausedAt: backupDate,
+        resumedAt: backupNullableDate,
+        reason: z.string().max(500).nullable().optional(),
+        overheadAddedMinutes: minutesSchema,
+      })
+    )
+    .max(200_000),
+  timeOff: z
+    .array(
+      z.object({
+        id: idSchema,
+        title: z.string().max(200),
+        start: backupDate,
+        end: backupDate,
+        source: z.enum(["MANUAL", "ICS"]),
+      })
+    )
+    .max(20_000)
+    .default([]),
+  baselines: z
+    .array(
+      z.object({
+        id: idSchema,
+        name: z.string().max(100),
+        projectEnd: backupDate,
+        createdAt: backupDate.optional(),
+        entries: z.array(
+          z.object({
+            id: idSchema,
+            taskId: idSchema,
+            title: z.string().max(200),
+            plannedStart: backupDate,
+            plannedEnd: backupDate,
+          })
+        ),
+      })
+    )
+    .max(1000)
+    .default([]),
+});
+
+export const importRequestSchema = z.object({
+  /** Typed confirmation: importing replaces everything. */
+  confirm: z.literal("REPLACE_ALL"),
+  data: backupSchema,
+});
+
+export type BackupData = z.infer<typeof backupSchema>;

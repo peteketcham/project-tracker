@@ -366,6 +366,51 @@ export function SettingsModal({ onClose, onChanged }: SettingsModalProps) {
               )}
             </div>
           </section>
+
+          <section aria-labelledby="backup-heading" className="space-y-2 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+            <h3 id="backup-heading" className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+              Backup
+            </h3>
+            <p className="text-[11px] text-zinc-700 dark:text-zinc-300">
+              Everything lives in one SQLite file on this machine. Download a copy now and then.
+              Restoring replaces <strong>all</strong> current tasks, history, time off and baselines.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <a href="/api/export" download className={secondaryButtonClass}>
+                Download backup (.json)
+              </a>
+              <div>
+                <label htmlFor="restore-file" className={labelClass}>Restore from a backup file</label>
+                <input
+                  id="restore-file"
+                  type="file"
+                  accept=".json,application/json"
+                  disabled={busy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    if (!confirm("Replace everything in the tracker with this backup? This cannot be undone.")) return;
+                    void act(async () => {
+                      let parsed: unknown;
+                      try {
+                        parsed = JSON.parse(await file.text());
+                      } catch {
+                        throw new Error("That file is not valid JSON.");
+                      }
+                      const r = await api<{ restored: { tasks: number } }>("/api/import", "POST", {
+                        confirm: "REPLACE_ALL",
+                        data: parsed,
+                      });
+                      setSettings(await api<Settings>("/api/settings"));
+                      return `Restored ${r.restored.tasks} tasks from the backup.`;
+                    });
+                  }}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          </section>
         </>
       )}
     </Modal>

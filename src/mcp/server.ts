@@ -6,6 +6,7 @@ import { describeError } from "../lib/errors";
 import { getSchedule, runWhatIf } from "../lib/services/schedule";
 import { getInsights } from "../lib/services/insights";
 import { addTimeOff, listTimeOff } from "../lib/services/calendar";
+import { compareBaseline, listBaselines, saveBaseline } from "../lib/services/baselines";
 import {
   addDependency,
   createPlan,
@@ -33,6 +34,7 @@ import {
   timeOffSchema,
   whatIfObject,
   whatIfSchema,
+  baselineCreateSchema,
 } from "../lib/validation";
 
 /**
@@ -255,6 +257,26 @@ tool(
   "Reports what logged sessions show: interruption counts and overhead by reason and week, average focus stretch, and estimated vs actual focused work",
   {},
   async () => getInsights()
+);
+
+tool(
+  "save_baseline",
+  "Saves the current plan's dates under a name so later slip can be measured against it",
+  { name: z.string().describe("Name for the baseline, e.g. 'Sprint start'") },
+  async (args) => {
+    const b = await saveBaseline(baselineCreateSchema.parse(args).name);
+    return `Saved baseline "${b.name}" (ID: ${b.id}).`;
+  }
+);
+
+tool(
+  "compare_to_baseline",
+  "Compares the current plan with a saved baseline: finish-date slip and per-task slip in working minutes. Omit baselineId to list baselines.",
+  { baselineId: idSchema.optional() },
+  async (args) => {
+    const id = idSchema.optional().parse(args.baselineId);
+    return id ? compareBaseline(id) : listBaselines();
+  }
 );
 
 async function run() {

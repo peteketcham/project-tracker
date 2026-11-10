@@ -9,6 +9,7 @@ Each folder is one feature in Spec Kit layout (`spec.md`, optionally `plan.md` a
 | 003 | [Calendar, settings and time off](003-calendar-and-time-off/spec.md) | Implemented |
 | 004 | [Insights](004-insights/spec.md) | Implemented |
 | 005 | [Agent tools and decomposition](005-agent-tools-and-decompose/spec.md) | Implemented |
+| 006 | [Baselines and backup](006-baselines-and-backup/spec.md) | Implemented |
 
 New features: run `/speckit-specify <description>`; it creates the next numbered folder.
 Project principles: [`.specify/memory/constitution.md`](../.specify/memory/constitution.md).

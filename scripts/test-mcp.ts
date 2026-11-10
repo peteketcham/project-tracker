@@ -37,6 +37,8 @@ async function main() {
     "list_time_off",
     "add_time_off",
     "get_insights",
+    "save_baseline",
+    "compare_to_baseline",
   ];
   const names = new Set(tools.tools.map((t) => t.name));
   const missing = expected.filter((n) => !names.has(n));

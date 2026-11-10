@@ -9,7 +9,8 @@ import {
   startOfDay,
 } from "date-fns";
 import { formatMinutes } from "@/lib/utils";
-import { Flame, Pin } from "lucide-react";
+import { Flame, Pin, Save, Trash2 } from "lucide-react";
+import type { BaselineComparisonDTO, BaselineSummary } from "@/lib/client";
 
 interface GanttChartProps {
   tasks: KanbanTask[];
@@ -23,7 +24,14 @@ interface GanttChartProps {
   onTaskClick: (task: KanbanTask) => void;
   projectStartDate?: string;
   projectEndDate?: string;
+  baselines?: BaselineSummary[];
+  comparison?: BaselineComparisonDTO | null;
+  onSelectBaseline?: (id: string | null) => void;
+  onSaveBaseline?: (name: string) => Promise<void> | void;
+  onDeleteBaseline?: (id: string) => Promise<void> | void;
 }
+
+const signedMinutes = (m: number) => `${m > 0 ? "+" : m < 0 ? "−" : ""}${formatMinutes(Math.abs(m))}`;
 
 type ZoomLevel = "hour" | "day" | "week";
 
@@ -33,7 +41,17 @@ export function GanttChart({
   onTaskClick,
   projectStartDate,
   projectEndDate,
+  baselines = [],
+  comparison = null,
+  onSelectBaseline,
+  onSaveBaseline,
+  onDeleteBaseline,
 }: GanttChartProps) {
+  const [baselineName, setBaselineName] = useState("");
+  const baselineByTask = useMemo(
+    () => new Map((comparison?.tasks ?? []).map((t) => [t.taskId, t])),
+    [comparison]
+  );
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("day");
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +67,11 @@ export function GanttChart({
   const { timelineStart, timelineEnd, totalMinutes, pixelsPerMinute } = useMemo(() => {
     let start = projectStartDate ? new Date(projectStartDate) : new Date();
     let end = projectEndDate ? new Date(projectEndDate) : addDays(start, 5);
+
+    for (const b of comparison?.tasks ?? []) {
+      if (b.plannedStart && new Date(b.plannedStart) < start) start = new Date(b.plannedStart);
+      if (b.plannedEnd && new Date(b.plannedEnd) > end) end = new Date(b.plannedEnd);
+    }
 
     scheduledTasks.forEach((t) => {
       if (t.scheduledStart && new Date(t.scheduledStart) < start) {
@@ -75,7 +98,7 @@ export function GanttChart({
       totalMinutes: totalMins,
       pixelsPerMinute: ppm,
     };
-  }, [projectStartDate, projectEndDate, scheduledTasks, zoomLevel]);
+  }, [projectStartDate, projectEndDate, scheduledTasks, zoomLevel, comparison]);
 
   const timelineWidth = Math.max(900, totalMinutes * pixelsPerMinute);
   const rowHeight = 48;
@@ -198,6 +221,7 @@ export function GanttChart({
               <th scope="col">Unattended Wait</th>
               <th scope="col">Critical Path</th>
               <th scope="col">Conflicts</th>
+              {comparison && <th scope="col">Slip against baseline {comparison.name}</th>}
             </tr>
           </thead>
           <tbody>
@@ -212,6 +236,13 @@ export function GanttChart({
                 <td>{formatMinutes(t.unattendedMinutes ?? 0)}</td>
                 <td>{t.isCritical ? "Yes (Critical Path)" : "No"}</td>
                 <td>{t.conflicts?.map((c) => c.message).join(" ") || "None"}</td>
+                {comparison && (
+                  <td>
+                    {baselineByTask.get(t.id)?.plannedEnd
+                      ? signedMinutes(baselineByTask.get(t.id)!.slipMinutes)
+                      : "Not in baseline"}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -219,7 +250,7 @@ export function GanttChart({
       </div>
 
       {/* Gantt Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 text-xs">
+      <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 text-xs">
         <div className="flex items-center space-x-3">
           <span className="font-bold text-zinc-900 dark:text-zinc-100">
             Timeline Engine
@@ -243,6 +274,81 @@ export function GanttChart({
             </span>
           </div>
         </div>
+
+        {/* Baseline: save the current dates, or compare against a saved set */}
+        {onSelectBaseline && onSaveBaseline && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <label htmlFor="gantt-baseline-select" className="font-semibold text-zinc-800 dark:text-zinc-200">
+              Compare to
+            </label>
+            <select
+              id="gantt-baseline-select"
+              value={comparison?.id ?? ""}
+              onChange={(e) => onSelectBaseline(e.target.value || null)}
+              className="px-2 py-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+            >
+              <option value="">No baseline</option>
+              {baselines.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({format(new Date(b.createdAt), "MMM d")})
+                </option>
+              ))}
+            </select>
+            {comparison && (
+              <>
+                <span
+                  className={`px-2 py-0.5 rounded font-bold border ${
+                    comparison.projectSlipMinutes > 0
+                      ? "bg-red-100 text-red-950 border-red-300 dark:bg-red-950/80 dark:text-red-100 dark:border-red-800"
+                      : "bg-emerald-100 text-emerald-950 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-100 dark:border-emerald-800"
+                  }`}
+                >
+                  Finish {comparison.projectSlipMinutes === 0 ? "on plan" : signedMinutes(comparison.projectSlipMinutes)}
+                  {comparison.slippedCount > 0 ? `, ${comparison.slippedCount} task(s) late` : ""}
+                </span>
+                {onDeleteBaseline && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteBaseline(comparison.id)}
+                    aria-label={`Delete baseline ${comparison.name}`}
+                    className="p-1 rounded text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/50 focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:outline-none"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </>
+            )}
+            <form
+              className="flex items-center gap-1"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!baselineName.trim()) return;
+                await onSaveBaseline(baselineName.trim());
+                setBaselineName("");
+              }}
+            >
+              <label htmlFor="gantt-baseline-name" className="sr-only">
+                Name for a new baseline
+              </label>
+              <input
+                id="gantt-baseline-name"
+                value={baselineName}
+                onChange={(e) => setBaselineName(e.target.value)}
+                maxLength={100}
+                placeholder="New baseline name"
+                className="w-36 px-2 py-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!baselineName.trim()}
+                className="flex items-center gap-1 px-2 py-1 rounded-md font-bold border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+              >
+                <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Save baseline</span>
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Zoom Controls */}
         <div
@@ -455,6 +561,23 @@ export function GanttChart({
               })}
             </svg>
 
+            {/* Baseline ghost bars: where each task was planned when the baseline was saved */}
+            {comparison &&
+              Array.from(taskCoordinates.values()).map(({ y, task }) => {
+                const b = baselineByTask.get(task.id);
+                if (!b?.plannedStart || !b.plannedEnd) return null;
+                const from = Math.max(0, differenceInMinutes(new Date(b.plannedStart), timelineStart)) * pixelsPerMinute;
+                const to = Math.max(0, differenceInMinutes(new Date(b.plannedEnd), timelineStart)) * pixelsPerMinute;
+                return (
+                  <div
+                    key={`baseline-${task.id}`}
+                    aria-hidden="true"
+                    className="absolute h-1.5 rounded-full bg-zinc-500 dark:bg-zinc-400 z-10"
+                    style={{ left: `${from}px`, top: `${y + 32}px`, width: `${Math.max(4, to - from)}px` }}
+                  />
+                );
+              })}
+
             {/* Interactive Task Bars */}
             {Array.from(taskCoordinates.values()).map(
               ({ left, width, setupWidth, workWidth, waitWidth, takedownWidth, y, task }) => {
@@ -585,6 +708,11 @@ export function GanttChart({
                           {task.totalFloatMinutes !== null && task.totalFloatMinutes !== undefined && (
                             <div className="text-zinc-400">
                               Schedule Float: {task.totalFloatMinutes}m
+                            </div>
+                          )}
+                          {baselineByTask.get(task.id)?.plannedEnd && (
+                            <div className="text-zinc-300">
+                              Against baseline: {signedMinutes(baselineByTask.get(task.id)!.slipMinutes) || "on plan"}
                             </div>
                           )}
                           {task.conflicts?.map((c) => (
