@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Sparkles, X, Clock, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 
 interface AIDecomposeModalProps {
   isOpen: boolean;

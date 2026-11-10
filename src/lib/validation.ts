@@ -154,3 +154,59 @@ export type TaskCreateInput = z.infer<typeof taskCreateSchema>;
 export type TaskUpdateInput = z.infer<typeof taskUpdateSchema>;
 export type DependencyInput = z.infer<typeof dependencySchema>;
 export type SessionActionInput = z.infer<typeof sessionActionSchema>;
+
+/** A batch of new tasks linked by temporary keys (used by MCP and Decompose). */
+export const planObject = z.object({
+  tasks: z
+    .array(taskCreateObject.extend({ tempKey: z.string().trim().min(1).max(32) }))
+    .min(1)
+    .max(50),
+  dependencies: z
+    .array(
+      z.object({
+        predecessorKey: z.string().trim().min(1).max(32),
+        successorKey: z.string().trim().min(1).max(32),
+        type: z.enum(DEPENDENCY_TYPES).default("FS"),
+        lagMinutes: dependencyObject.shape.lagMinutes,
+      })
+    )
+    .max(200)
+    .default([]),
+});
+
+export const planSchema = planObject.superRefine((plan, ctx) => {
+  const keys = new Set<string>();
+  plan.tasks.forEach((t, i) => {
+    if (keys.has(t.tempKey)) {
+      ctx.addIssue({ code: "custom", path: ["tasks", i, "tempKey"], message: "Duplicate tempKey" });
+    }
+    keys.add(t.tempKey);
+    if (DATED_CONSTRAINTS.includes(t.constraintType) && !t.pinnedDate) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["tasks", i, "pinnedDate"],
+        message: `${t.constraintType} needs a date`,
+      });
+    }
+  });
+  plan.dependencies.forEach((d, i) => {
+    for (const field of ["predecessorKey", "successorKey"] as const) {
+      if (!keys.has(d[field])) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["dependencies", i, field],
+          message: `Unknown task key "${d[field]}"`,
+        });
+      }
+    }
+    if (d.predecessorKey === d.successorKey) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["dependencies", i, "successorKey"],
+        message: "A task cannot depend on itself",
+      });
+    }
+  });
+});
+
+export type PlanInput = z.infer<typeof planSchema>;

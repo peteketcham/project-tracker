@@ -2,8 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { KanbanTask } from "./KanbanBoard";
-import { Pause, X, Zap, Clock, AlertTriangle } from "lucide-react";
-import { formatMinutes } from "@/lib/utils";
+import { Pause, X, AlertTriangle } from "lucide-react";
 
 interface InterruptionModalProps {
   isOpen: boolean;

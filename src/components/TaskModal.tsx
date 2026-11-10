@@ -6,14 +6,11 @@ import {
   X,
   Clock,
   Pin,
-  Flame,
   Link,
-  Plus,
   Trash2,
   Zap,
-  Calendar,
-  AlertCircle,
 } from "lucide-react";
+import type { NewDependency } from "@/lib/client";
 import { formatMinutes } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -22,11 +19,17 @@ interface TaskModalProps {
   onClose: () => void;
   task?: KanbanTask | null;
   allTasks: KanbanTask[];
-  onSave: (taskData: Partial<KanbanTask> & { newDependency?: any }) => Promise<void>;
+  onSave: (taskData: Partial<KanbanTask> & { newDependency?: NewDependency }) => Promise<void>;
   onDeleteDependency?: (depId: string) => Promise<void>;
 }
 
-export function TaskModal({
+/** The form is remounted per task (key), so its fields initialise from props without an effect. */
+export function TaskModal(props: TaskModalProps) {
+  if (!props.isOpen) return null;
+  return <TaskModalForm key={props.task?.id ?? "new"} {...props} />;
+}
+
+function TaskModalForm({
   isOpen,
   onClose,
   task,
@@ -34,16 +37,18 @@ export function TaskModal({
   onSave,
   onDeleteDependency,
 }: TaskModalProps) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState<KanbanTask["status"]>("SCHEDULED");
-  const [priority, setPriority] = useState<KanbanTask["priority"]>("MEDIUM");
-  const [baseDurationMinutes, setBaseDurationMinutes] = useState(60);
-  const [setupMinutes, setSetupMinutes] = useState(15);
-  const [takedownMinutes, setTakedownMinutes] = useState(10);
-  const [constraintType, setConstraintType] = useState("ASAP");
-  const [pinnedDate, setPinnedDate] = useState("");
-  const [color, setColor] = useState("#3b82f6");
+  const [title, setTitle] = useState(task?.title ?? "");
+  const [description, setDescription] = useState(task?.description ?? "");
+  const [status, setStatus] = useState<KanbanTask["status"]>(task?.status ?? "SCHEDULED");
+  const [priority, setPriority] = useState<KanbanTask["priority"]>(task?.priority ?? "MEDIUM");
+  const [baseDurationMinutes, setBaseDurationMinutes] = useState(task?.baseDurationMinutes ?? 60);
+  const [setupMinutes, setSetupMinutes] = useState(task?.setupMinutes ?? 15);
+  const [takedownMinutes, setTakedownMinutes] = useState(task?.takedownMinutes ?? 10);
+  const [constraintType, setConstraintType] = useState(task?.constraintType ?? "ASAP");
+  const [pinnedDate, setPinnedDate] = useState(
+    task?.pinnedDate ? format(new Date(task.pinnedDate), "yyyy-MM-dd'T'HH:mm") : ""
+  );
+  const [color, setColor] = useState(task?.color ?? "#3b82f6");
 
   // New dependency form
   const [selectedPredecessorId, setSelectedPredecessorId] = useState("");
@@ -62,46 +67,11 @@ export function TaskModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
-    if (task) {
-      setTitle(task.title || "");
-      setDescription(task.description || "");
-      setStatus(task.status || "SCHEDULED");
-      setPriority(task.priority || "MEDIUM");
-      setBaseDurationMinutes(task.baseDurationMinutes || 60);
-      setSetupMinutes(task.setupMinutes !== undefined ? task.setupMinutes : 15);
-      setTakedownMinutes(task.takedownMinutes !== undefined ? task.takedownMinutes : 10);
-      setConstraintType(task.constraintType || "ASAP");
-      setPinnedDate(
-        task.pinnedDate
-          ? format(new Date(task.pinnedDate), "yyyy-MM-dd'T'HH:mm")
-          : ""
-      );
-      setColor(task.color || "#3b82f6");
-    } else {
-      setTitle("");
-      setDescription("");
-      setStatus("SCHEDULED");
-      setPriority("MEDIUM");
-      setBaseDurationMinutes(60);
-      setSetupMinutes(15);
-      setTakedownMinutes(10);
-      setConstraintType("ASAP");
-      setPinnedDate("");
-      setColor("#3b82f6");
-    }
-    setSelectedPredecessorId("");
-    setDependencyType("FS");
-    setLagMinutes(0);
-  }, [task, isOpen]);
-
-  if (!isOpen) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     try {
-      const payload: any = {
+      const payload: Partial<KanbanTask> & { newDependency?: NewDependency } = {
         title,
         description,
         status,
@@ -110,7 +80,10 @@ export function TaskModal({
         setupMinutes: Number(setupMinutes),
         takedownMinutes: Number(takedownMinutes),
         constraintType,
-        pinnedDate: pinnedDate ? new Date(pinnedDate).toISOString() : null,
+        pinnedDate:
+          pinnedDate && constraintType !== "ASAP" && constraintType !== "ALAP"
+            ? new Date(pinnedDate).toISOString()
+            : null,
         color,
       };
 
@@ -216,14 +189,18 @@ export function TaskModal({
               <select
                 id="task-status-select"
                 value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
+                onChange={(e) => setStatus(e.target.value as KanbanTask["status"])}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
               >
                 <option value="BACKLOG">Backlog (Unscheduled)</option>
                 <option value="SCHEDULED">Scheduled</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="PAUSED">Paused / Interrupted</option>
-                <option value="DONE">Done</option>
+                {task && (
+                  <>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="PAUSED">Paused / Interrupted</option>
+                    <option value="DONE">Done</option>
+                  </>
+                )}
               </select>
             </div>
 
@@ -237,7 +214,7 @@ export function TaskModal({
               <select
                 id="task-priority-select"
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as any)}
+                onChange={(e) => setPriority(e.target.value as KanbanTask["priority"])}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
               >
                 <option value="LOW">Low</option>
@@ -367,6 +344,7 @@ export function TaskModal({
                   className="w-full px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:outline-none"
                 >
                   <option value="ASAP">As Soon As Possible (ASAP - Default)</option>
+                  <option value="ALAP">As Late As Possible (ALAP)</option>
                   <option value="MUST_START_ON">📌 Must Start On (Fixed start date)</option>
                   <option value="MUST_FINISH_ON">📌 Must Finish On (Hard deadline)</option>
                   <option value="START_NO_EARLIER_THAN">Start No Earlier Than (SNET)</option>
@@ -386,7 +364,8 @@ export function TaskModal({
                   type="datetime-local"
                   value={pinnedDate}
                   onChange={(e) => setPinnedDate(e.target.value)}
-                  disabled={constraintType === "ASAP"}
+                  disabled={constraintType === "ASAP" || constraintType === "ALAP"}
+                  required={constraintType !== "ASAP" && constraintType !== "ALAP"}
                   className="w-full px-3 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:outline-none"
                 />
               </div>
@@ -429,7 +408,7 @@ export function TaskModal({
             )}
 
             {/* Add new dependency */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
               <div className="sm:col-span-2">
                 <label htmlFor="add-pred-task-select" className="sr-only">
                   Select prerequisite task to link
@@ -466,6 +445,21 @@ export function TaskModal({
                   <option value="FF">Finish-to-Finish (FF)</option>
                   <option value="SF">Start-to-Finish (SF)</option>
                 </select>
+              </div>
+              <div>
+                <label htmlFor="add-dep-lag-input" className="sr-only">
+                  Lag in working minutes (negative for lead)
+                </label>
+                <input
+                  id="add-dep-lag-input"
+                  type="number"
+                  step="5"
+                  value={lagMinutes}
+                  onChange={(e) => setLagMinutes(Number(e.target.value))}
+                  title="Lag in working minutes (negative for lead)"
+                  placeholder="Lag (min)"
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+                />
               </div>
             </div>
           </div>

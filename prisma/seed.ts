@@ -159,7 +159,7 @@ async function main() {
     },
   });
 
-  const task9 = await prisma.task.create({
+  await prisma.task.create({
     data: {
       title: "After-Dinner Dishwashing & Leftover Packing",
       description: "Scrape china, run dishwasher cycles, portion turkey and sides into glass storage containers.",

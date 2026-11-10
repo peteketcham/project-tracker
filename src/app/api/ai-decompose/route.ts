@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { createPlan } from "@/lib/services/tasks";
 import { route, readJson } from "@/lib/api";
-import { decomposeRequestSchema } from "@/lib/validation";
+import { decomposeRequestSchema, planSchema } from "@/lib/validation";
 
 export const POST = route(async (req) => {
   {
@@ -268,44 +268,30 @@ export const POST = route(async (req) => {
       ];
     }
 
-    let currentOrder = await prisma.task.count();
-    const createdTasks = [];
-
-    for (const item of decomposedTasks) {
-      currentOrder += 1;
-      const t = await prisma.task.create({
-        data: {
-          title: item.title,
+    const { tasks } = await createPlan(
+      planSchema.parse({
+        tasks: decomposedTasks.map((item, i) => ({
+          tempKey: `T${i + 1}`,
+          title: item.title.slice(0, 200),
           description: item.description,
-          status: "SCHEDULED",
           priority: item.priority,
           baseDurationMinutes: item.baseDuration,
           setupMinutes: item.setup,
           takedownMinutes: item.takedown,
-          constraintType: "ASAP",
           color: item.color,
-          order: currentOrder,
-        },
-      });
-      createdTasks.push(t);
-    }
-
-    // Link sequentially with Finish-to-Start dependencies
-    for (let i = 0; i < createdTasks.length - 1; i++) {
-      await prisma.taskDependency.create({
-        data: {
-          predecessorId: createdTasks[i].id,
-          successorId: createdTasks[i + 1].id,
-          type: "FS",
-          lagMinutes: 0,
-        },
-      });
-    }
+        })),
+        // Link sequentially with Finish-to-Start dependencies
+        dependencies: decomposedTasks.slice(1).map((_, i) => ({
+          predecessorKey: `T${i + 1}`,
+          successorKey: `T${i + 2}`,
+        })),
+      })
+    );
 
     return NextResponse.json({
       success: true,
-      message: `Decomposed into ${createdTasks.length} sequenced tasks with setup and takedown buffers`,
-      tasks: createdTasks,
+      message: `Decomposed into ${tasks.length} sequenced tasks with setup and takedown buffers`,
+      tasks,
     });
   }
 });

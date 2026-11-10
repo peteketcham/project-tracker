@@ -28,7 +28,6 @@ interface HeaderProps {
     hasCycle: boolean;
   };
   totalInterruptionOverheadMinutes: number;
-  activePausedCount: number;
 }
 
 export function Header({
@@ -39,7 +38,6 @@ export function Header({
   onRefresh,
   scheduleOverview,
   totalInterruptionOverheadMinutes,
-  activePausedCount,
 }: HeaderProps) {
   const formattedEnd = scheduleOverview?.projectEnd
     ? format(new Date(scheduleOverview.projectEnd), "EEE, MMM d • h:mm a")

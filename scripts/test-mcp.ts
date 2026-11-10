@@ -28,7 +28,8 @@ async function main() {
     name: "get_schedule_summary",
     arguments: {},
   });
-  console.log("Summary result:", (summaryResult.content as any)[0]?.text?.slice(0, 300) + "...");
+  const content = summaryResult.content as Array<{ text?: string }>;
+  console.log("Summary result:", content[0]?.text?.slice(0, 300) + "...");
 
   await client.close();
   console.log("\nMCP Server test completed successfully!");

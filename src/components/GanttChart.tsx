@@ -6,13 +6,11 @@ import {
   format,
   addDays,
   differenceInMinutes,
-  isSameDay,
   startOfDay,
-  addHours,
   setHours,
 } from "date-fns";
 import { formatMinutes } from "@/lib/utils";
-import { Flame, Pin, Clock, ZoomIn, ZoomOut, Info } from "lucide-react";
+import { Flame, Pin } from "lucide-react";
 
 interface GanttChartProps {
   tasks: KanbanTask[];
