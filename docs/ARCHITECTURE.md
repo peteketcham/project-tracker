@@ -1,7 +1,8 @@
-# SPECIFICATION: Time-Aware Agile Project Tracker & Reactive Gantt Engine
-**Speckit Format Version**: 2.1  
+# Architecture: Time-Aware Project Tracker
+
+> How the system is built. *What* it must do lives in [`specs/`](../specs/); project rules live in [`.specify/memory/constitution.md`](../.specify/memory/constitution.md).
+
 **Target Execution Engines**: Antigravity, Claude Code, Cursor, Human Developers  
-**Repository**: `/Users/peteketcham/git/project-tracker`  
 **Compliance Standard**: WCAG 2.1 Level AA  
 
 ---

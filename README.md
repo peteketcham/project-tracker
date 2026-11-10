@@ -40,11 +40,17 @@ Includes a built-in **Model Context Protocol (MCP)** server so AI agents (like A
 
 ## Getting Started
 
-### 1. Install & Seed
+### 1. Install, configure & seed
 ```bash
-# Dependencies are already installed
-npm run seed     # Seeds realistic initial sprint data with dependencies & interruptions
+npm install
+cp .env.example .env          # defaults work as-is for local use
+npx prisma migrate deploy     # creates prisma/dev.db from the migrations
+npm run seed                  # optional: demo projects with dependencies & interruptions
 ```
+
+Already have a `prisma/dev.db` that was created with `prisma db push`? Either run
+`npx prisma migrate reset` (drops the data and re-seeds), or keep the data with
+`npx prisma migrate resolve --applied 20261110000000_init && npx prisma migrate deploy`.
 
 ### 2. Run the Web Application
 ```bash
@@ -67,7 +73,7 @@ To allow AI coding assistants (like Antigravity, Claude Desktop, or Cursor) to r
       "args": [
         "-y",
         "tsx",
-        "/Users/peteketcham/git/project-tracker/src/mcp/server.ts"
+        "/absolute/path/to/project-tracker/src/mcp/server.ts"
       ]
     }
   }
