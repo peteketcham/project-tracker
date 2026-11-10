@@ -5,7 +5,7 @@ import { Header } from "@/components/Header";
 import { KanbanBoard, KanbanTask } from "@/components/KanbanBoard";
 import { GanttChart } from "@/components/GanttChart";
 import { TaskModal } from "@/components/TaskModal";
-import { AIDecomposeModal } from "@/components/AIDecomposeModal";
+import { DecomposeModal, type DecomposeMode } from "@/components/DecomposeModal";
 import { InterruptionModal } from "@/components/InterruptionModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { InsightsModal } from "@/components/InsightsModal";
@@ -23,7 +23,8 @@ export default function ProjectTrackerHome() {
   // Modals state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<KanbanTask | null>(null);
-  const [isAIDecomposeOpen, setIsAIDecomposeOpen] = useState(false);
+  const [isDecomposeOpen, setIsDecomposeOpen] = useState(false);
+  const [decomposeMode, setDecomposeMode] = useState<DecomposeMode>({ mode: "templates", model: null });
   const [taskToInterrupt, setTaskToInterrupt] = useState<KanbanTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
@@ -47,6 +48,9 @@ export default function ProjectTrackerHome() {
     api<ScheduleResponse>("/api/tasks")
       .then((d) => alive && setData(d))
       .catch((e: Error) => alive && setError(e.message));
+    api<DecomposeMode>("/api/decompose")
+      .then((m) => alive && setDecomposeMode(m))
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -134,9 +138,9 @@ export default function ProjectTrackerHome() {
     }
   };
 
-  const handleAIDecompose = async (prompt: string, targetDays: number) => {
-    await api("/api/ai-decompose", "POST", { prompt, targetDays });
-    announce("Decomposition complete. New tasks and schedule generated.");
+  const handleDecompose = async (prompt: string, targetDays: number) => {
+    const result = await api<{ taskCount: number }>("/api/decompose", "POST", { prompt, targetDays });
+    announce(`${result.taskCount} tasks created and scheduled.`);
     await refresh();
   };
 
@@ -193,7 +197,8 @@ export default function ProjectTrackerHome() {
         viewMode={viewMode}
         setViewMode={setViewMode}
         onOpenNewTask={() => openTask(null)}
-        onOpenAIDecompose={() => setIsAIDecomposeOpen(true)}
+        onOpenDecompose={() => setIsDecomposeOpen(true)}
+        decomposeUsesModel={decomposeMode.mode === "model"}
         onRefresh={() => run(async () => "Schedule recalculated.")}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenInsights={() => setIsInsightsOpen(true)}
@@ -278,11 +283,13 @@ export default function ProjectTrackerHome() {
         onDeleteDependency={handleDeleteDependency}
       />
 
-      <AIDecomposeModal
-        isOpen={isAIDecomposeOpen}
-        onClose={() => setIsAIDecomposeOpen(false)}
-        onDecompose={handleAIDecompose}
-      />
+      {isDecomposeOpen && (
+        <DecomposeModal
+          mode={decomposeMode}
+          onClose={() => setIsDecomposeOpen(false)}
+          onDecompose={handleDecompose}
+        />
+      )}
 
       {isSettingsOpen && (
         <SettingsModal

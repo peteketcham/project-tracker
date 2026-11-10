@@ -5,6 +5,7 @@ import {
   BarChart3,
   Columns,
   LayoutGrid,
+  LayoutTemplate,
   Plus,
   Sparkles,
   Flame,
@@ -21,7 +22,9 @@ interface HeaderProps {
   viewMode: "kanban" | "gantt" | "split";
   setViewMode: (mode: "kanban" | "gantt" | "split") => void;
   onOpenNewTask: () => void;
-  onOpenAIDecompose: () => void;
+  onOpenDecompose: () => void;
+  /** True when a real model is configured; otherwise the button offers templates. */
+  decomposeUsesModel: boolean;
   onRefresh: () => void;
   onOpenSettings: () => void;
   onOpenInsights: () => void;
@@ -38,7 +41,8 @@ export function Header({
   viewMode,
   setViewMode,
   onOpenNewTask,
-  onOpenAIDecompose,
+  onOpenDecompose,
+  decomposeUsesModel,
   onRefresh,
   onOpenSettings,
   onOpenInsights,
@@ -196,14 +200,18 @@ export function Header({
               <Settings className="w-4 h-4" aria-hidden="true" />
             </button>
 
-            {/* AI Decompose Button */}
+            {/* Decompose Button: labelled for what it actually does */}
             <button
               type="button"
-              onClick={onOpenAIDecompose}
+              onClick={onOpenDecompose}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white shadow-xs focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:outline-none transition"
             >
-              <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>AI Decompose</span>
+              {decomposeUsesModel ? (
+                <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+              ) : (
+                <LayoutTemplate className="w-3.5 h-3.5" aria-hidden="true" />
+              )}
+              <span>{decomposeUsesModel ? "AI Decompose" : "Templates"}</span>
             </button>
 
             {/* New Task Button */}
