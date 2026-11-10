@@ -7,6 +7,7 @@ import { GanttChart } from "@/components/GanttChart";
 import { TaskModal } from "@/components/TaskModal";
 import { AIDecomposeModal } from "@/components/AIDecomposeModal";
 import { InterruptionModal } from "@/components/InterruptionModal";
+import { SettingsModal } from "@/components/SettingsModal";
 import { AlertTriangle, Loader2, X } from "lucide-react";
 import { api, type NewDependency, type ScheduleResponse } from "@/lib/client";
 
@@ -23,6 +24,7 @@ export default function ProjectTrackerHome() {
   const [editingTask, setEditingTask] = useState<KanbanTask | null>(null);
   const [isAIDecomposeOpen, setIsAIDecomposeOpen] = useState(false);
   const [taskToInterrupt, setTaskToInterrupt] = useState<KanbanTask | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const tasks = data?.tasks ?? [];
   const dependencies = data?.dependencies ?? [];
@@ -191,6 +193,7 @@ export default function ProjectTrackerHome() {
         onOpenNewTask={() => openTask(null)}
         onOpenAIDecompose={() => setIsAIDecomposeOpen(true)}
         onRefresh={() => run(async () => "Schedule recalculated.")}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         scheduleOverview={scheduleOverview}
         totalInterruptionOverheadMinutes={totalInterruptionOverheadMinutes}
       />
@@ -277,6 +280,13 @@ export default function ProjectTrackerHome() {
         onClose={() => setIsAIDecomposeOpen(false)}
         onDecompose={handleAIDecompose}
       />
+
+      {isSettingsOpen && (
+        <SettingsModal
+          onClose={() => setIsSettingsOpen(false)}
+          onChanged={() => void refresh().catch((e: Error) => setError(e.message))}
+        />
+      )}
 
       <InterruptionModal
         isOpen={taskToInterrupt !== null}

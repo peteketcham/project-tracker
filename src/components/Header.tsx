@@ -10,6 +10,7 @@ import {
   Flame,
   Clock,
   RefreshCw,
+  Settings,
   AlertTriangle,
 } from "lucide-react";
 import { formatMinutes } from "@/lib/utils";
@@ -21,6 +22,7 @@ interface HeaderProps {
   onOpenNewTask: () => void;
   onOpenAIDecompose: () => void;
   onRefresh: () => void;
+  onOpenSettings: () => void;
   scheduleOverview?: {
     projectStart: string;
     projectEnd: string;
@@ -36,6 +38,7 @@ export function Header({
   onOpenNewTask,
   onOpenAIDecompose,
   onRefresh,
+  onOpenSettings,
   scheduleOverview,
   totalInterruptionOverheadMinutes,
 }: HeaderProps) {
@@ -170,6 +173,15 @@ export function Header({
               className="p-2 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none transition"
             >
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              aria-label="Settings and calendar"
+              className="p-2 rounded-lg text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none transition"
+            >
+              <Settings className="w-4 h-4" aria-hidden="true" />
             </button>
 
             {/* AI Decompose Button */}

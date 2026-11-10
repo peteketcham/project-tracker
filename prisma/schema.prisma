@@ -82,3 +82,13 @@ model ProjectSettings {
   levelResources       Boolean @default(true)  // never double-book a person
   timezone             String?                 // IANA zone for working hours; null = server zone
 }
+
+// Time that is not available for work: a day off, an appointment, an imported calendar event.
+model TimeOff {
+  id        String   @id @default(cuid())
+  title     String
+  start     DateTime
+  end       DateTime
+  source    String   @default("MANUAL") // MANUAL, ICS
+  createdAt DateTime @default(now())
+}

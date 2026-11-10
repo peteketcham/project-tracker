@@ -219,3 +219,67 @@ export const planSchema = planObject.superRefine((plan, ctx) => {
 });
 
 export type PlanInput = z.infer<typeof planSchema>;
+
+/* ------------------------------------------------- settings and time off */
+
+const timeOfDay = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Use 24-hour HH:MM");
+
+const toMinutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+
+function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const settingsUpdateSchema = z
+  .object({
+    workingHoursStart: timeOfDay,
+    workingHoursEnd: timeOfDay,
+    workDays: z
+      .array(z.coerce.number().int().min(0).max(6))
+      .min(1, "Pick at least one working day")
+      .max(7)
+      .transform((days) => [...new Set(days)].sort((a, b) => a - b)),
+    timezone: z
+      .union([z.null(), z.literal("").transform(() => null), z.string().refine(isTimeZone, "Unknown time zone")])
+      .optional(),
+    levelResources: z.boolean().optional(),
+    projectStartDate: nullableDateSchema,
+  })
+  .refine((v) => toMinutes(v.workingHoursEnd) > toMinutes(v.workingHoursStart), {
+    path: ["workingHoursEnd"],
+    message: "Working hours must end after they start",
+  });
+
+export const timeOffObject = z.object({
+  title: z.string().trim().min(1, "Give it a name").max(200),
+  start: dateSchema,
+  end: dateSchema,
+});
+
+export const timeOffSchema = timeOffObject.refine((v) => v.end > v.start, {
+  path: ["end"],
+  message: "Must end after it starts",
+});
+
+export const icsImportSchema = z
+  .object({
+    /** Contents of an .ics file. */
+    ics: z.string().max(2_000_000).optional(),
+    /** Address of an .ics feed (http, https or webcal). Fetched once, not stored. */
+    url: z.string().trim().max(2000).optional(),
+    /** Use the ICS_URL configured in the server environment. */
+    useConfigured: z.boolean().optional(),
+  })
+  .refine((v) => [v.ics, v.url, v.useConfigured].filter(Boolean).length === 1, {
+    message: "Provide exactly one of: ics, url, useConfigured",
+  });
+
+export type SettingsUpdateInput = z.infer<typeof settingsUpdateSchema>;
+export type TimeOffInput = z.infer<typeof timeOffSchema>;

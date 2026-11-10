@@ -99,3 +99,37 @@ test("a plan with an unknown or duplicate key is rejected as a whole", () => {
     true
   );
 });
+
+import { icsImportSchema, settingsUpdateSchema, timeOffSchema } from "../src/lib/validation";
+
+test("003/US1.1: settings refuse hours that end before they start, no working days, unknown zones", () => {
+  const good = { workingHoursStart: "08:00", workingHoursEnd: "18:00", workDays: [1, 2, 3] };
+  assert.equal(settingsUpdateSchema.safeParse(good).success, true);
+  assert.equal(
+    settingsUpdateSchema.safeParse({ ...good, workingHoursStart: "18:00", workingHoursEnd: "08:00" }).success,
+    false
+  );
+  assert.equal(settingsUpdateSchema.safeParse({ ...good, workDays: [] }).success, false);
+  assert.equal(settingsUpdateSchema.safeParse({ ...good, workDays: [7] }).success, false);
+  assert.equal(settingsUpdateSchema.safeParse({ ...good, timezone: "Mars/Olympus" }).success, false);
+  assert.equal(settingsUpdateSchema.parse({ ...good, timezone: "America/Chicago" }).timezone, "America/Chicago");
+  assert.equal(settingsUpdateSchema.parse({ ...good, timezone: "" }).timezone, null);
+  assert.deepEqual(settingsUpdateSchema.parse({ ...good, workDays: [3, 1, 3] }).workDays, [1, 3]);
+});
+
+test("003/US2: time off must end after it starts", () => {
+  assert.equal(
+    timeOffSchema.safeParse({ title: "Trip", start: "2026-11-20T09:00:00Z", end: "2026-11-19T09:00:00Z" }).success,
+    false
+  );
+  assert.equal(
+    timeOffSchema.safeParse({ title: "Trip", start: "2026-11-20T09:00:00Z", end: "2026-11-21T09:00:00Z" }).success,
+    true
+  );
+});
+
+test("003/US3: an import names exactly one source", () => {
+  assert.equal(icsImportSchema.safeParse({}).success, false);
+  assert.equal(icsImportSchema.safeParse({ ics: "x", url: "https://a/b.ics" }).success, false);
+  assert.equal(icsImportSchema.safeParse({ useConfigured: true }).success, true);
+});

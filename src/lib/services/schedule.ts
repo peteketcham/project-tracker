@@ -41,7 +41,7 @@ export function toCalendarSettings(
 }
 
 /** Everything the scheduler needs, read from the database. */
-export async function loadScheduleInputs() {
+export async function loadScheduleInputs(now: Date = new Date()) {
   const settings = await getSettingsRow();
   const tasks = await prisma.task.findMany({
     orderBy: { order: "asc" },
@@ -53,6 +53,10 @@ export async function loadScheduleInputs() {
     },
   });
   const dependencies = await prisma.taskDependency.findMany();
+  const timeOff = await prisma.timeOff.findMany({
+    where: { end: { gte: new Date(now.getTime() - 86_400_000) } },
+    select: { start: true, end: true },
+  });
 
   const schedulerTasks: SchedulerTask[] = tasks
     .filter((t) => t.status !== "BACKLOG")
@@ -93,7 +97,7 @@ export async function loadScheduleInputs() {
     dependencies,
     schedulerTasks,
     schedulerDeps,
-    calendar: toCalendarSettings(settings),
+    calendar: toCalendarSettings(settings, timeOff),
   };
 }
 
@@ -103,7 +107,7 @@ export async function loadScheduleInputs() {
  */
 export async function getSchedule(now: Date = new Date()) {
   const { settings, tasks, dependencies, schedulerTasks, schedulerDeps, calendar } =
-    await loadScheduleInputs();
+    await loadScheduleInputs(now);
 
   const schedule = calculateSchedule(schedulerTasks, schedulerDeps, calendar, now);
   const byId = new Map(schedule.tasks.map((t) => [t.id, t]));
